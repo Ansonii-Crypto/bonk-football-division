@@ -1,6 +1,14 @@
 .account-content {
-    max-width: 32rem;
-    margin-top: 2.5rem;
+    width: min(100%, 66rem);
+    margin: clamp(2.25rem, 5vw, 4rem) auto 0;
+}
+
+.account-content--narrow {
+    width: min(100%, 34rem);
+}
+
+.account-content--profile {
+    width: min(100%, 49rem);
 }
 
 .account-panel {
@@ -15,6 +23,48 @@
     margin: 0 0 1.5rem;
     font-size: 1.3rem;
     line-height: 1.35;
+}
+
+.account-overview {
+    background: linear-gradient(125deg, #172a3c, #152333 62%, #29202a);
+    border-color: #486075;
+}
+
+.account-kicker,
+.account-card-kicker {
+    margin: 0 0 0.9rem;
+    color: #9eddf3;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+.account-card-kicker {
+    color: #cfb8aa;
+}
+
+.account-dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+}
+
+.account-dashboard-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.account-dashboard-card h2 {
+    margin-bottom: 0.65rem;
+}
+
+.account-dashboard-card .account-note {
+    flex: 1;
+    margin: 0 0 1.45rem;
 }
 
 .account-fields {
@@ -78,7 +128,20 @@
     background: #c1edff;
 }
 
+.account-button--outline {
+    color: var(--text);
+    background: rgb(120 217 255 / 7%);
+    border-color: rgb(120 217 255 / 27%);
+    text-decoration: none;
+}
+
+.account-button--outline:hover {
+    background: rgb(120 217 255 / 14%);
+    border-color: rgb(120 217 255 / 43%);
+}
+
 .account-button:focus-visible,
+.account-copy-id:focus-visible,
 .account-menu-trigger:focus-visible,
 .account-menu-options button:focus-visible,
 .account-menu-options a:focus-visible {
@@ -111,6 +174,124 @@
     align-items: center;
     gap: 1rem;
     margin-bottom: 1.25rem;
+}
+
+.account-overview .account-identity {
+    margin-bottom: 0.3rem;
+}
+
+.account-overview .account-id-line {
+    margin-left: 4.5rem;
+}
+
+.account-id-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.8rem;
+}
+
+.account-id-line .account-id {
+    margin: 0;
+}
+
+.account-copy-id {
+    padding: 0.35rem 0.6rem;
+    color: #b5eaff;
+    background: rgb(120 217 255 / 7%);
+    border: 1px solid rgb(120 217 255 / 20%);
+    border-radius: 0.45rem;
+    font: inherit;
+    font-size: 0.73rem;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.account-copy-id:hover {
+    color: var(--text);
+    background: rgb(120 217 255 / 13%);
+}
+
+.account-copy-status {
+    color: #b8e6bd;
+    font-size: 0.77rem;
+}
+
+.account-copy-status:empty {
+    display: none;
+}
+
+.account-id-select {
+    width: 7rem;
+    margin-left: 0.35rem;
+    padding: 0.3rem 0.5rem;
+    color: var(--text);
+    background: #0d1723;
+    border: 1px solid #58849b;
+    border-radius: 0.4rem;
+    font: inherit;
+}
+
+.account-back-link {
+    display: inline-flex;
+    margin-bottom: 1.1rem;
+    color: #b9ddea;
+    font-size: 0.85rem;
+    font-weight: 650;
+    text-decoration: none;
+}
+
+.account-back-link:hover {
+    color: var(--text);
+    text-decoration: underline;
+}
+
+.account-profile-panel {
+    background: linear-gradient(145deg, #192b3e, #152333 70%);
+}
+
+.account-profile-details {
+    display: grid;
+    gap: 0.7rem;
+    margin: 2rem 0 0;
+}
+
+.account-profile-detail {
+    display: grid;
+    grid-template-columns: minmax(7rem, 1fr) minmax(0, 2fr);
+    gap: 1rem;
+    padding: 0.9rem 1rem;
+    background: rgb(8 17 28 / 30%);
+    border: 1px solid rgb(205 226 255 / 11%);
+    border-radius: 0.65rem;
+}
+
+.account-profile-detail dt {
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.account-profile-detail dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-weight: 650;
+}
+
+.account-profile-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgb(205 226 255 / 13%);
+}
+
+.account-profile-footer .account-note {
+    max-width: 30rem;
+    margin: 0;
 }
 
 .account-panel .account-name {
@@ -190,13 +371,15 @@
 
 .account-menu-options {
     position: absolute;
+    display: grid;
+    gap: 0.45rem;
     top: calc(100% + 0.6rem);
     right: 0;
     z-index: 1;
     width: max-content;
     min-width: 12rem;
     max-width: min(20rem, calc(100vw - 3rem));
-    padding: 0.4rem;
+    padding: 0.65rem;
     background: #152333;
     border: 1px solid #34485c;
     border-radius: 0.75rem;
@@ -207,7 +390,7 @@
 .account-menu-options button {
     display: block;
     width: 100%;
-    padding: 0.65rem 0.8rem;
+    padding: 0.75rem 0.85rem;
     color: var(--text);
     background: transparent;
     border: 1px solid transparent;
@@ -218,6 +401,10 @@
     text-align: left;
     text-decoration: none;
     cursor: pointer;
+}
+
+.account-menu-options .account-logout {
+    margin-top: 0.2rem;
 }
 
 .navigation-links .account-menu-options a:hover {
@@ -260,6 +447,10 @@
 }
 
 @media (max-width: 48rem) {
+    .account-dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
     .account-menu-trigger {
         width: 100%;
         padding: 0.7rem 1rem;
@@ -279,5 +470,16 @@
         max-width: none;
         margin-top: 0.4rem;
         box-shadow: none;
+    }
+}
+
+@media (max-width: 30rem) {
+    .account-overview .account-id-line {
+        margin-left: 0;
+    }
+
+    .account-profile-detail {
+        grid-template-columns: 1fr;
+        gap: 0.2rem;
     }
 }

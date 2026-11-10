@@ -34,6 +34,17 @@ function fillAndSubmit(window, username = "typed-user", password = "test-only-pa
     return form;
 }
 
+function nextRoute(window) {
+    return new Promise(resolve => window.addEventListener("hashchange", resolve, { once: true }));
+}
+
+async function navigate(window, hash) {
+    assert.notEqual(window.location.hash, hash);
+    const changed = nextRoute(window);
+    window.location.hash = hash;
+    await changed;
+}
+
 test("sign-in preserves password characters and replaces Account with the verified identity", async t => {
     const calls = [];
     let resolveLogin;
@@ -54,10 +65,13 @@ test("sign-in preserves password characters and replaces Account with the verifi
     assert.equal(login.options.credentials, "same-origin");
     assert.equal(login.options.redirect, "error");
     assert.equal(form.querySelector("fieldset").disabled, true);
+    const returned = nextRoute(window);
     resolveLogin(Response.json({ account: verifiedAccount }));
-    await tick();
+    await returned;
     assert.equal(form.elements.password.value, "");
     assert.equal(document.querySelector(".account-menu-username").textContent, "VerifiedPlayer");
+    assert.equal(window.location.hash, "#home", "direct account visits return to Home after sign-in");
+    await navigate(window, "#account");
     assert.match(document.querySelector(".account-id").textContent, /3177088/);
     assert.equal(document.querySelector(".account-form"), null);
     assert.equal(window.localStorage.length, 0);
@@ -87,6 +101,82 @@ test("failed credentials show a concise error, clear the password, and allow ano
     assert.ok(window.document.querySelector(".account-menu"));
 });
 
+test("successful sign-in returns to the previous page while a failed attempt stays on Account", async t => {
+    let attempts = 0;
+    const window = await page(t, async path => {
+        if (path === "/api/account") {
+            return Response.json({ account: null });
+        }
+        attempts += 1;
+        return attempts === 1
+            ? Response.json({ error: "Unable to sign in." }, { status: 401 })
+            : Response.json({ account: verifiedAccount });
+    }, "https://bonk-football-division.com/#classes");
+    await navigate(window, "#account");
+    fillAndSubmit(window);
+    await tick();
+    assert.equal(window.location.hash, "#account");
+    const returned = nextRoute(window);
+    fillAndSubmit(window);
+    await returned;
+    assert.equal(window.location.hash, "#classes");
+    assert.equal(window.document.querySelector("#app").dataset.page, "classes");
+});
+
+test("sign-in restores the assessment view captured after filters changed the URL", async t => {
+    const window = await page(t, async path => Response.json({ account: path === "/api/account" ? null : verifiedAccount }),
+        "https://bonk-football-division.com/#assessments");
+    const search = window.document.querySelector(".assessment-search");
+    search.value = "keeper";
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const previousView = window.location.hash;
+    assert.match(previousView, /q=keeper/);
+    await navigate(window, "#account");
+    const returned = nextRoute(window);
+    fillAndSubmit(window);
+    await returned;
+    assert.equal(window.location.hash, previousView);
+    assert.equal(window.document.querySelector(".assessment-search").value, "keeper");
+});
+
+test("a signed-out profile can lead to sign-in and return to the same profile", async t => {
+    const window = await page(t, async path => Response.json({ account: path === "/api/account" ? null : verifiedAccount }),
+        "https://bonk-football-division.com/#profile");
+    const signInLink = window.document.querySelector("#profile-sign-in");
+    assert.ok(signInLink);
+    await navigate(window, "#account");
+    const returned = nextRoute(window);
+    fillAndSubmit(window);
+    await returned;
+    assert.equal(window.location.hash, "#profile");
+    assert.match(window.document.querySelector("#app").textContent, /VerifiedPlayer/);
+    assert.match(window.document.querySelector("#app").textContent, /3177088/);
+    assert.equal(window.document.querySelector(".account-menu-trigger").getAttribute("aria-current"), "page");
+    assert.equal(window.document.querySelector(".account-menu-options a[href='#profile']").getAttribute("aria-current"), "page");
+    assert.equal(window.document.querySelector(".account-menu-options a[href='#account']").hasAttribute("aria-current"), false);
+});
+
+test("the account center can copy an ID or offer selectable text when clipboard access is unavailable", async t => {
+    const window = await page(t, async () => Response.json({ account: verifiedAccount }));
+    const { document } = window;
+    assert.ok(document.querySelector("a[href='#profile']"));
+    const copied = [];
+    Object.defineProperty(window.navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async value => copied.push(value) }
+    });
+    document.querySelector(".account-copy-id").click();
+    await tick();
+    assert.deepEqual(copied, ["3177088"]);
+    assert.match(document.querySelector(".account-copy-status").textContent, /Copied/);
+    Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: undefined });
+    document.querySelector(".account-copy-id").click();
+    await tick();
+    const fallback = document.querySelector(".account-id-select");
+    assert.equal(fallback.value, "3177088");
+    assert.equal(fallback.readOnly, true);
+});
+
 test("existing sessions support keyboard dropdown navigation and server-confirmed sign-out", async t => {
     let failLogout = true;
     const window = await page(t, async (path, options) => {
@@ -103,7 +193,7 @@ test("existing sessions support keyboard dropdown navigation and server-confirme
     summary.focus();
     summary.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     assert.equal(menu.open, true);
-    assert.equal(document.activeElement.textContent, "Account");
+    assert.equal(document.activeElement.textContent, "Account center");
     menu.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert.equal(menu.open, false);
     assert.equal(document.activeElement, summary);
@@ -114,7 +204,7 @@ test("existing sessions support keyboard dropdown navigation and server-confirme
     logout.click();
     await tick();
     assert.ok(document.querySelector(".account-menu"), "failed sign-out keeps the current identity");
-    assert.match(document.querySelector(".account-panel [role=status]").textContent, /Please try again/);
+    assert.match(document.querySelector(".account-dashboard-card .account-status").textContent, /Please try again/);
     failLogout = false;
     logout.click();
     await tick();

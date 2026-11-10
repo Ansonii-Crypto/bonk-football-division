@@ -26,9 +26,14 @@ const pages = {
     },
     account: {
         label: "Account",
-        title: "Account",
-        description: "Sign in with your Bonk.io account.",
+        title: "Account center",
+        description: "Your Bonk account and profile in one place.",
         render: () => window.BonkAccount.renderPage()
+    },
+    profile: {
+        title: "Your profile",
+        description: "Your Bonk identity on Bonk Football Division.",
+        render: () => window.BonkAccount.renderProfilePage()
     }
 };
 
@@ -63,6 +68,9 @@ function createNavigation() {
     const list = header.querySelector(".navigation-links");
 
     for (const [id, page] of Object.entries(pages)) {
+        if (id === "profile") {
+            continue;
+        }
         const item = document.createElement("li");
         const link = document.createElement("a");
         link.href = `#${id}`;
@@ -244,7 +252,7 @@ function renderPage() {
     }
 
     header.querySelectorAll("[data-page]").forEach(link => {
-        if (link.dataset.page === pageId) {
+        if (link.dataset.page === pageId || pageId === "profile" && link.classList.contains("account-menu-trigger")) {
             link.setAttribute("aria-current", "page");
         } else {
             link.removeAttribute("aria-current");
@@ -257,8 +265,26 @@ function renderPage() {
 const closeNavigation = createNavigation();
 renderPage();
 
+let loginReturnHash = null;
+
+function returnableHash(hash) {
+    const route = hash.slice(1).split("?", 1)[0];
+    return ["home", "assessments", "players", "tiers", "classes", "divisions", "profile"].includes(route)
+        || route.startsWith("assessments/");
+}
+
+window.addEventListener("bonk-login-success", () => {
+    if (window.location.hash !== "#account") {
+        return;
+    }
+
+    const destination = loginReturnHash && returnableHash(loginReturnHash) ? loginReturnHash : "#home";
+    loginReturnHash = null;
+    window.location.hash = destination;
+});
+
 window.addEventListener("bonk-account-change", () => {
-    if (app.dataset.page === "account") {
+    if (["account", "profile"].includes(app.dataset.page)) {
         renderPage();
     }
 });
@@ -273,10 +299,20 @@ document.querySelector(".skip-link").addEventListener("click", event => {
     app.focus();
 });
 
-window.addEventListener("hashchange", () => {
+window.addEventListener("hashchange", event => {
+    if (window.location.hash === "#account") {
+        try {
+            const previousHash = new URL(event.oldURL).hash;
+            if (returnableHash(previousHash)) {
+                loginReturnHash = previousHash;
+            }
+        } catch {
+            loginReturnHash = null;
+        }
+    }
     closeNavigation();
     renderPage();
-    if (app.dataset.page === "account") {
+    if (["account", "profile"].includes(app.dataset.page)) {
         window.BonkAccount.refresh();
     }
     app.focus({ preventScroll: true });

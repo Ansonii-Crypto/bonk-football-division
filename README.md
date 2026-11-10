@@ -30,6 +30,8 @@ wrangler.jsonc                Cloudflare Worker configuration
 
 Assessments and Divisions start empty. The seven defined playstyle classes are retained. Class videos are not available yet.
 
+The Divisions page invites tournament hosts to work with the division. A host request form and review process are planned; no contact form is live yet.
+
 Bonk.io account sign-in is available through **Account**. Assessments are not yet connected to a database. No player records or competitions are fabricated, and the existing Bonk Critic database is not connected.
 
 ## Local development
@@ -78,6 +80,10 @@ npm test
 ```
 
 Tests use mocked provider responses and synthetic credentials. They do not sign into a real Bonk account.
+
+## Later: public Bonk player lookup
+
+Revisit the [documented Bonkverse developer API](https://bonkverse.io/developers/) when public account search is ready. It needs a free API key stored only on the Worker and can return replay-observed levels, archived games, known account IDs and estimated join dates. Its documented player lookup uses usernames. Label the source, link to Bonkverse profiles and respect hidden levels; the data is not a live Bonk account feed. Do not use Bonk Leagues' internal search endpoint as an undocumented dependency.
 
 ## Assessment browsing
 

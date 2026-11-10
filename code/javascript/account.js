@@ -27,7 +27,7 @@
 
     function avatar(account, large = false) {
         const node = element("span", `account-avatar${large ? " account-avatar--large" : ""}`,
-            Array.from(account.username)[0]?.toUpperCase() || "?");
+            Array.from(account.username.trimStart())[0]?.toUpperCase() || "?");
         node.setAttribute("aria-hidden", "true");
         return node;
     }
@@ -165,7 +165,7 @@
         if (restoreFocus) {
             navigationItem.querySelector("a").focus();
         } else if (focusPage) {
-            document.querySelector("#bonk-username")?.focus({ preventScroll: true });
+            document.querySelector("#bonk-username, #profile-sign-in")?.focus({ preventScroll: true });
         }
     }
 
@@ -183,7 +183,7 @@
         if (!navigationItem) {
             return;
         }
-        const currentPage = document.querySelector("#app")?.dataset.page === "account";
+        const currentPage = ["account", "profile"].includes(document.querySelector("#app")?.dataset.page);
         if (!state.account) {
             const link = element("a", "", "Account");
             link.href = "#account";
@@ -206,9 +206,15 @@
         arrow.setAttribute("aria-hidden", "true");
         summary.append(avatar(state.account), username, arrow);
         const options = element("div", "account-menu-options");
-        const accountLink = element("a", "", "Account");
+        options.setAttribute("aria-label", "Account options");
+        const accountLink = element("a", "", "Account center");
         accountLink.href = "#account";
+        accountLink.dataset.page = "account";
         accountLink.addEventListener("click", () => closeMenu());
+        const profileLink = element("a", "", "Profile");
+        profileLink.href = "#profile";
+        profileLink.dataset.page = "profile";
+        profileLink.addEventListener("click", () => closeMenu());
         const signOut = element("button", "account-logout", "Log out");
         signOut.type = "button";
         signOut.disabled = state.pending;
@@ -218,7 +224,7 @@
             status.textContent = "Signing out…";
         }
         signOut.addEventListener("click", () => logout(signOut, status));
-        options.append(accountLink, signOut, status);
+        options.append(accountLink, profileLink, signOut, status);
         menu.append(summary, options);
         menu.addEventListener("keydown", event => {
             if (event.key === "Escape" && menu.open) {
@@ -232,7 +238,7 @@
             }
             event.preventDefault();
             menu.open = true;
-            const actions = [accountLink, signOut];
+            const actions = [accountLink, profileLink, signOut];
             const index = actions.indexOf(document.activeElement);
             const next = event.key === "Home" ? 0 : event.key === "End" ? actions.length - 1
                 : index < 0 ? (event.key === "ArrowUp" ? actions.length - 1 : 0)
@@ -243,14 +249,12 @@
         navigationItem.replaceChildren(menu);
     }
 
-    function renderPage() {
-        const section = element("section", "account-content");
-        section.setAttribute("aria-label", "Your account");
+    function renderSessionStatus(section) {
         if (!state.checked) {
             const status = element("p", "account-status", "Checking your session…");
             status.setAttribute("role", "status");
             section.append(status);
-            return section;
+            return true;
         }
         if (state.unavailable) {
             const panel = element("div", "account-panel");
@@ -267,17 +271,70 @@
             });
             panel.append(heading, status, retry);
             section.append(panel);
+            return true;
+        }
+        return false;
+    }
+
+    function renderPage() {
+        const section = element("section", "account-content");
+        section.setAttribute("aria-label", "Account center");
+        if (renderSessionStatus(section)) {
+            section.classList.add("account-content--narrow");
             return section;
         }
 
         if (state.account) {
-            const panel = element("div", "account-panel");
+            section.classList.add("account-content--dashboard");
+            const panel = element("div", "account-panel account-overview");
+            const kicker = element("p", "account-kicker", "Connected to Bonk.io");
             const identity = element("div", "account-identity");
             const name = element("h2", "account-name", state.account.username);
             name.tabIndex = -1;
             identity.append(avatar(state.account, true), name);
+            const idLine = element("div", "account-id-line");
             const identifier = element("p", "account-id", `Bonk account ID: ${state.account.bonkId}`);
-            const note = element("p", "account-note", "You are signed in with your Bonk.io account.");
+            const copyId = element("button", "account-copy-id", "Copy ID");
+            copyId.type = "button";
+            copyId.setAttribute("aria-label", "Copy Bonk account ID");
+            const copyStatus = element("span", "account-copy-status");
+            copyStatus.setAttribute("role", "status");
+            copyId.addEventListener("click", async () => {
+                const id = state.account.bonkId;
+                copyStatus.replaceChildren();
+                try {
+                    if (!navigator.clipboard?.writeText) {
+                        throw new Error("Clipboard unavailable");
+                    }
+                    await navigator.clipboard.writeText(id);
+                    copyStatus.textContent = "Copied";
+                } catch {
+                    const selectable = element("input", "account-id-select");
+                    selectable.type = "text";
+                    selectable.readOnly = true;
+                    selectable.value = id;
+                    selectable.setAttribute("aria-label", "Bonk account ID to copy");
+                    copyStatus.append("Select the ID: ", selectable);
+                    selectable.focus();
+                    selectable.select();
+                }
+            });
+            idLine.append(identifier, copyId, copyStatus);
+            panel.append(kicker, identity, idLine);
+
+            const cards = element("div", "account-dashboard-grid");
+            const profile = element("section", "account-panel account-dashboard-card");
+            profile.append(element("p", "account-card-kicker", "Your space"));
+            profile.append(element("h2", "", "Profile"));
+            profile.append(element("p", "account-note", "View the identity linked to your Bonk account."));
+            const profileLink = element("a", "account-button account-button--outline", "View profile");
+            profileLink.href = "#profile";
+            profile.append(profileLink);
+
+            const sessionPanel = element("section", "account-panel account-dashboard-card");
+            sessionPanel.append(element("p", "account-card-kicker", "Account access"));
+            sessionPanel.append(element("h2", "", "Session"));
+            sessionPanel.append(element("p", "account-note", "This device stays signed in for up to 24 hours. You can end this session at any time."));
             const status = element("p", "account-status");
             status.setAttribute("role", "status");
             status.textContent = state.pending ? "Signing out…" : state.error;
@@ -285,11 +342,13 @@
             signOut.type = "button";
             signOut.disabled = state.pending;
             signOut.addEventListener("click", () => logout(signOut, status));
-            panel.append(identity, identifier, note, signOut, status);
-            section.append(panel);
+            sessionPanel.append(signOut, status);
+            cards.append(profile, sessionPanel);
+            section.append(panel, cards);
             return section;
         }
 
+        section.classList.add("account-content--narrow");
         const panel = element("div", "account-panel");
         panel.append(element("h2", "", "Sign in with Bonk.io"));
         const form = element("form", "account-form");
@@ -369,7 +428,8 @@
             }
             const restoreFocus = form.isConnected;
             notify();
-            if (restoreFocus) {
+            window.dispatchEvent(new Event("bonk-login-success"));
+            if (restoreFocus && window.location.hash === "#account") {
                 document.querySelector(".account-name")?.focus({ preventScroll: true });
             }
         });
@@ -378,8 +438,58 @@
         return section;
     }
 
+    function renderProfilePage() {
+        const section = element("section", "account-content account-content--profile");
+        section.setAttribute("aria-label", "Your Bonk profile");
+        if (renderSessionStatus(section)) {
+            section.classList.add("account-content--narrow");
+            return section;
+        }
+        if (!state.account) {
+            section.classList.add("account-content--narrow");
+            const panel = element("div", "account-panel");
+            panel.append(element("h2", "", "Sign in to view your profile"));
+            panel.append(element("p", "account-note", "Your profile is linked to your Bonk.io account."));
+            const signIn = element("a", "account-button", "Sign in");
+            signIn.id = "profile-sign-in";
+            signIn.href = "#account";
+            panel.append(signIn);
+            section.append(panel);
+            return section;
+        }
+
+        const back = element("a", "account-back-link", "← Account center");
+        back.href = "#account";
+        const panel = element("div", "account-panel account-profile-panel");
+        panel.append(element("p", "account-kicker", "Bonk profile"));
+        const identity = element("div", "account-identity");
+        const name = element("h2", "account-name", state.account.username);
+        identity.append(avatar(state.account, true), name);
+        panel.append(identity);
+
+        const details = element("dl", "account-profile-details");
+        for (const [label, value] of [
+            ["Username", state.account.username],
+            ["Bonk account ID", state.account.bonkId]
+        ]) {
+            const row = element("div", "account-profile-detail");
+            row.append(element("dt", "", label), element("dd", "", value));
+            details.append(row);
+        }
+        panel.append(details);
+        const footer = element("div", "account-profile-footer");
+        footer.append(element("p", "account-note", "Football assessments will appear here when they are linked to Bonk accounts."));
+        const assessments = element("a", "account-button account-button--outline", "Browse assessments");
+        assessments.href = "#assessments";
+        footer.append(assessments);
+        panel.append(footer);
+        section.append(back, panel);
+        return section;
+    }
+
     window.BonkAccount = {
         renderPage,
+        renderProfilePage,
         refresh,
         closeMenu,
         mountNavigation(item) {

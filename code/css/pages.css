@@ -107,6 +107,86 @@ h2.section-heading {
     width: 100%;
 }
 
+.division-invitation {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(17rem, 0.75fr);
+    align-items: center;
+    gap: clamp(2rem, 5vw, 5rem);
+    padding: clamp(1.5rem, 4vw, 3rem);
+    background:
+        radial-gradient(circle at 100% 0%, rgb(255 155 112 / 13%), transparent 40%),
+        radial-gradient(circle at 0% 100%, rgb(120 217 255 / 10%), transparent 45%),
+        #111d2b;
+    border: 1px solid #35485a;
+    border-top-color: rgb(255 155 112 / 52%);
+    border-radius: 1rem;
+    box-shadow: 0 20px 44px rgb(0 0 0 / 14%);
+}
+
+.division-invitation-eyebrow {
+    margin: 0 0 0.75rem;
+    color: var(--fire);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+.division-invitation h2 {
+    max-width: 16ch;
+    margin: 0 0 1rem;
+    font-size: clamp(1.75rem, 3vw, 2.5rem);
+    letter-spacing: -0.045em;
+    line-height: 1.15;
+}
+
+.division-invitation-copy > p:last-child,
+.division-invitation-request > p:not(.division-invitation-status) {
+    max-width: 54ch;
+    margin: 0;
+    color: #b9c9d9;
+    font-size: 0.94rem;
+    line-height: 1.75;
+}
+
+.division-invitation-request {
+    min-width: 0;
+    padding: 1.5rem;
+    background: rgb(6 13 22 / 34%);
+    border: 1px solid rgb(205 226 255 / 13%);
+    border-radius: 0.8rem;
+}
+
+.division-invitation-request h3 {
+    margin: 0 0 0.7rem;
+    font-size: 1.05rem;
+}
+
+.division-invitation-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 1.4rem 0 0;
+    color: #f7c4a8;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.025em;
+}
+
+.division-invitation-status::before {
+    width: 0.45rem;
+    height: 0.45rem;
+    background: var(--fire);
+    border-radius: 50%;
+    content: "";
+}
+
+.division-events-heading {
+    margin: 2.8rem 0 1rem;
+    font-size: 1.25rem;
+    letter-spacing: -0.025em;
+}
+
 .content-grid + .preview-note {
     margin-top: 1.5rem;
 }
@@ -384,7 +464,31 @@ h2.section-heading {
 }
 
 select.field-control {
+    min-height: 3rem;
+    padding-inline: 1rem 2.8rem;
+    appearance: none;
+    background-color: #172536;
+    background-image:
+        linear-gradient(45deg, transparent 50%, #b8cfdd 50%),
+        linear-gradient(135deg, #b8cfdd 50%, transparent 50%);
+    background-position:
+        calc(100% - 1.25rem) 50%,
+        calc(100% - 0.94rem) 50%;
+    background-repeat: no-repeat;
+    background-size: 0.33rem 0.33rem;
+    border-color: #465d72;
+    color-scheme: dark;
     cursor: pointer;
+}
+
+select.field-control:hover {
+    background-color: #1d3143;
+    border-color: #7093a9;
+}
+
+select.field-control option {
+    color: var(--text);
+    background: #172536;
 }
 
 .page-content summary:focus-visible,
@@ -402,6 +506,11 @@ select.field-control {
 
 .field-control:focus-visible {
     border-color: rgb(233 238 248 / 40%);
+}
+
+select.field-control:focus-visible {
+    background-color: #1d3143;
+    border-color: #86b2c7;
 }
 
 .preview-note a {
@@ -982,6 +1091,11 @@ body.class-panel-open {
 @media (max-width: 64rem) {
     .content-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .division-invitation {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1.5rem;
     }
 
     .division-events > .partner-card {
