@@ -458,10 +458,19 @@
             return section;
         }
 
-        const back = element("a", "account-back-link", "← Account center");
+        const layout = element("div", "account-profile-layout");
+        const navigation = element("nav", "account-panel account-profile-navigation");
+        navigation.setAttribute("aria-label", "Profile sections");
+        navigation.append(element("p", "account-card-kicker", "Your profile"));
+        const general = element("a", "account-profile-nav-link", "General information");
+        general.href = "#profile";
+        general.setAttribute("aria-current", "page");
+        const back = element("a", "account-profile-home", "← Account center");
         back.href = "#account";
+        navigation.append(general, back);
+
         const panel = element("div", "account-panel account-profile-panel");
-        panel.append(element("p", "account-kicker", "Bonk profile"));
+        panel.append(element("p", "account-kicker", "General information"));
         const identity = element("div", "account-identity");
         const name = element("h2", "account-name", state.account.username);
         identity.append(avatar(state.account, true), name);
@@ -469,21 +478,16 @@
 
         const details = element("dl", "account-profile-details");
         for (const [label, value] of [
-            ["Username", state.account.username],
-            ["Bonk account ID", state.account.bonkId]
+            ["Bonk username", state.account.username],
+            ["Bonk player ID", state.account.bonkId]
         ]) {
             const row = element("div", "account-profile-detail");
             row.append(element("dt", "", label), element("dd", "", value));
             details.append(row);
         }
         panel.append(details);
-        const footer = element("div", "account-profile-footer");
-        footer.append(element("p", "account-note", "Football assessments will appear here when they are linked to Bonk accounts."));
-        const assessments = element("a", "account-button account-button--outline", "Browse assessments");
-        assessments.href = "#assessments";
-        footer.append(assessments);
-        panel.append(footer);
-        section.append(back, panel);
+        layout.append(navigation, panel);
+        section.append(layout);
         return section;
     }
 

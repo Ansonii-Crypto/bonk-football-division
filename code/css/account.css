@@ -8,7 +8,11 @@
 }
 
 .account-content--profile {
-    width: min(100%, 49rem);
+    width: 100%;
+}
+
+.account-content--profile.account-content--narrow {
+    width: min(100%, 34rem);
 }
 
 .account-panel {
@@ -232,35 +236,94 @@
     font: inherit;
 }
 
-.account-back-link {
-    display: inline-flex;
-    margin-bottom: 1.1rem;
-    color: #b9ddea;
-    font-size: 0.85rem;
+.account-profile-layout {
+    display: grid;
+    grid-template-columns: 14rem minmax(0, 1fr);
+    align-items: start;
+    gap: 1.25rem;
+}
+
+.account-profile-navigation {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.9rem;
+}
+
+.account-profile-navigation .account-card-kicker {
+    margin: 0.3rem 0.8rem 0.7rem;
+}
+
+.account-profile-nav-link,
+.account-profile-home {
+    display: block;
+    padding: 0.8rem 0.9rem;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-radius: 0.6rem;
+    font-size: 0.86rem;
     font-weight: 650;
     text-decoration: none;
 }
 
-.account-back-link:hover {
+.account-profile-nav-link:hover,
+.account-profile-home:hover {
     color: var(--text);
-    text-decoration: underline;
+    background: rgb(120 217 255 / 7%);
+}
+
+.account-profile-nav-link[aria-current="page"] {
+    color: #c3ecff;
+    background: rgb(120 217 255 / 10%);
+    border-color: rgb(120 217 255 / 22%);
+}
+
+.account-profile-home {
+    margin-top: 0.9rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+}
+
+.account-profile-nav-link:focus-visible,
+.account-profile-home:focus-visible {
+    outline: 2px solid #8c9cae;
+    outline-offset: 3px;
 }
 
 .account-profile-panel {
+    min-width: 0;
+    min-height: 27rem;
     background: linear-gradient(145deg, #192b3e, #152333 70%);
+}
+
+.account-profile-panel .account-identity {
+    margin: 1.8rem 0 2rem;
+}
+
+.account-profile-panel .account-name {
+    font-size: clamp(1.55rem, 2.5vw, 2.1rem);
+}
+
+.account-profile-panel .account-avatar--large {
+    width: 4.25rem;
+    height: 4.25rem;
+    font-size: 1.8rem;
 }
 
 .account-profile-details {
     display: grid;
-    gap: 0.7rem;
-    margin: 2rem 0 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 0;
 }
 
 .account-profile-detail {
-    display: grid;
-    grid-template-columns: minmax(7rem, 1fr) minmax(0, 2fr);
-    gap: 1rem;
-    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 1.05rem 1.2rem;
     background: rgb(8 17 28 / 30%);
     border: 1px solid rgb(205 226 255 / 11%);
     border-radius: 0.65rem;
@@ -276,22 +339,6 @@
     margin: 0;
     overflow-wrap: anywhere;
     font-weight: 650;
-}
-
-.account-profile-footer {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1.25rem;
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid rgb(205 226 255 / 13%);
-}
-
-.account-profile-footer .account-note {
-    max-width: 30rem;
-    margin: 0;
 }
 
 .account-panel .account-name {
@@ -447,6 +494,27 @@
 }
 
 @media (max-width: 48rem) {
+    .account-profile-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .account-profile-navigation {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .account-profile-navigation .account-card-kicker {
+        flex-basis: 100%;
+    }
+
+    .account-profile-home {
+        margin: 0 0 0 auto;
+        padding: 0.8rem 0.9rem;
+        border-top: 0;
+        border-radius: 0.6rem;
+    }
+
     .account-dashboard-grid {
         grid-template-columns: 1fr;
     }
@@ -478,8 +546,7 @@
         margin-left: 0;
     }
 
-    .account-profile-detail {
+    .account-profile-details {
         grid-template-columns: 1fr;
-        gap: 0.2rem;
     }
 }
