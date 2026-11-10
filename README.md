@@ -2,6 +2,8 @@
 
 A Bonk.io football platform for player assessments, tier rankings, playstyle classes, and championship partnerships.
 
+Live site: [bonk-football-division.com](https://bonk-football-division.com/).
+
 ## Project structure
 
 ```text
@@ -47,7 +49,7 @@ npm run deploy
 
 If Cloudflare authentication has expired, run `npx wrangler login` before deploying. GitHub pushes and Cloudflare deployments are separate actions; no automatic deployment workflow is configured.
 
-The `bonk-football-division.com` custom domain is not configured by this repository. Domain routing can be added after the domain is active in the intended Cloudflare account.
+The `bonk-football-division.com` custom domain is attached through `wrangler.jsonc`. Cloudflare manages its DNS binding and TLS certificate. Enable **Always Use HTTPS** under the domain's **SSL/TLS > Edge Certificates** settings to redirect HTTP traffic to HTTPS.
 
 ## Assessment browsing
 
