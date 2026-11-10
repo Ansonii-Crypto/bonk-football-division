@@ -1,0 +1,283 @@
+.account-content {
+    max-width: 32rem;
+    margin-top: 2.5rem;
+}
+
+.account-panel {
+    padding: clamp(1.4rem, 4vw, 2rem);
+    background: #152333;
+    border: 1px solid #34485c;
+    border-radius: 1rem;
+    box-shadow: 0 16px 40px rgb(0 0 0 / 15%);
+}
+
+.account-panel h2 {
+    margin: 0 0 1.5rem;
+    font-size: 1.3rem;
+    line-height: 1.35;
+}
+
+.account-fields {
+    display: grid;
+    gap: 0.65rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.account-fields label {
+    font-size: 0.82rem;
+    font-weight: 650;
+}
+
+.account-fields input {
+    width: 100%;
+    min-height: 3rem;
+    margin-bottom: 0.5rem;
+    padding: 0.7rem 0.85rem;
+    color: var(--text);
+    background: #0d1723;
+    border: 1px solid #415367;
+    border-radius: 0.6rem;
+    outline: none;
+    font: inherit;
+    font-size: 0.95rem;
+}
+
+.account-fields input:focus {
+    border-color: #7e9ab0;
+}
+
+.account-note,
+.account-id {
+    margin: 0.4rem 0 1.3rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.75;
+}
+
+.account-button {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    justify-self: start;
+    min-height: 2.85rem;
+    padding: 0.7rem 1.15rem;
+    color: #09111a;
+    background: #a5e5ff;
+    border: 1px solid transparent;
+    border-radius: 0.6rem;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.account-button:hover {
+    background: #c1edff;
+}
+
+.account-button:focus-visible,
+.account-menu-trigger:focus-visible,
+.account-menu-options button:focus-visible,
+.account-menu-options a:focus-visible {
+    outline: 2px solid #8c9cae;
+    outline-offset: 3px;
+}
+
+.account-button:disabled,
+.account-fields:disabled,
+.account-menu-options button:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.account-status {
+    margin: 1rem 0 0;
+    color: #f7c6ad;
+    font-size: 0.85rem;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+}
+
+.account-status:empty,
+.account-menu-status:empty {
+    display: none;
+}
+
+.account-identity {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.account-panel .account-name {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.account-avatar {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    color: #d8f4ff;
+    background: #28465b;
+    border: 1px solid #58849b;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.account-avatar--large {
+    width: 3.5rem;
+    height: 3.5rem;
+    font-size: 1.5rem;
+}
+
+.navigation-account {
+    position: relative;
+}
+
+.account-menu-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.7rem;
+    padding: 0.55rem 0.8rem;
+    color: var(--text);
+    background: linear-gradient(120deg, rgb(120 217 255 / 6%), rgb(255 155 112 / 6%));
+    border: 1px solid rgb(205 226 255 / 16%);
+    border-radius: 0.65rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.6;
+    list-style: none;
+    cursor: pointer;
+}
+
+.account-menu-trigger::-webkit-details-marker {
+    display: none;
+}
+
+.account-menu-trigger:hover,
+.account-menu[open] > .account-menu-trigger {
+    border-color: rgb(255 155 112 / 45%);
+}
+
+.account-menu-trigger[aria-current="page"] {
+    color: #b5eaff;
+    background: rgb(120 217 255 / 9%);
+    border-color: rgb(120 217 255 / 18%);
+}
+
+.account-menu-username {
+    max-width: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.account-menu-arrow {
+    color: var(--muted);
+    font-size: 0.7rem;
+}
+
+.account-menu-options {
+    position: absolute;
+    top: calc(100% + 0.6rem);
+    right: 0;
+    z-index: 1;
+    width: max-content;
+    min-width: 12rem;
+    max-width: min(20rem, calc(100vw - 3rem));
+    padding: 0.4rem;
+    background: #152333;
+    border: 1px solid #34485c;
+    border-radius: 0.75rem;
+    box-shadow: 0 12px 30px rgb(0 0 0 / 35%);
+}
+
+.navigation-links .account-menu-options a,
+.account-menu-options button {
+    display: block;
+    width: 100%;
+    padding: 0.65rem 0.8rem;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 0.4rem;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.navigation-links .account-menu-options a:hover {
+    color: var(--text);
+    background: rgb(120 217 255 / 7%);
+    border-color: transparent;
+}
+
+.account-button.account-logout,
+.account-menu-options .account-logout {
+    color: #ffaaa6;
+    background: rgb(226 75 75 / 7%);
+    border-color: rgb(255 139 139 / 15%);
+}
+
+.account-button.account-logout:hover,
+.account-menu-options .account-logout:hover {
+    color: #ffcbc9;
+    background: rgb(226 75 75 / 15%);
+}
+
+.account-menu-status {
+    margin: 0.4rem 0;
+    padding: 0 0.8rem;
+    color: #f7c6ad;
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+}
+
+.account-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (max-width: 48rem) {
+    .account-menu-trigger {
+        width: 100%;
+        padding: 0.7rem 1rem;
+    }
+
+    .account-menu-username {
+        max-width: none;
+    }
+
+    .account-menu-arrow {
+        margin-left: auto;
+    }
+
+    .account-menu-options {
+        position: static;
+        width: 100%;
+        max-width: none;
+        margin-top: 0.4rem;
+        box-shadow: none;
+    }
+}

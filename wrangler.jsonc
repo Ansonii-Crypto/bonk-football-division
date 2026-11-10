@@ -1,6 +1,7 @@
 {
     "$schema": "./node_modules/wrangler/config-schema.json",
     "name": "bonk-football-division",
+    "main": "worker/index.js",
     "account_id": "9633a7a27a5588e48dc2d961c049abd5",
     "compatibility_date": "2026-11-10",
     "workers_dev": true,
@@ -14,6 +15,37 @@
         "command": "npm run build"
     },
     "assets": {
-        "directory": "./dist"
+        "directory": "./dist",
+        "binding": "ASSETS",
+        "run_worker_first": ["/api", "/api/*"]
+    },
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "bonk-football-division",
+            "database_id": "d8fb6be1-43c6-4dbf-9caa-231068a4233e",
+            "migrations_dir": "worker/migrations"
+        }
+    ],
+    "ratelimits": [
+        {
+            "name": "API_RATE_LIMITER",
+            "namespace_id": "71001501",
+            "simple": {
+                "limit": 300,
+                "period": 60
+            }
+        },
+        {
+            "name": "LOGIN_RATE_LIMITER",
+            "namespace_id": "71001502",
+            "simple": {
+                "limit": 20,
+                "period": 60
+            }
+        }
+    ],
+    "triggers": {
+        "crons": ["0 4 * * *"]
     }
 }

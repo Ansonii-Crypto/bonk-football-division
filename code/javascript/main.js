@@ -27,7 +27,8 @@ const pages = {
     account: {
         label: "Account",
         title: "Account",
-        description: "Account sign-in is not available yet."
+        description: "Sign in with your Bonk.io account.",
+        render: () => window.BonkAccount.renderPage()
     }
 };
 
@@ -74,6 +75,10 @@ function createNavigation() {
 
         item.append(link);
         list.append(item);
+
+        if (id === "account") {
+            window.BonkAccount.mountNavigation(item);
+        }
     }
 
     const navigation = header.querySelector(".navigation");
@@ -83,24 +88,29 @@ function createNavigation() {
         navigation.classList.toggle("is-open", open);
         toggle.setAttribute("aria-expanded", String(open));
         toggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+        if (!open) {
+            window.BonkAccount.closeMenu();
+        }
     }
 
     toggle.addEventListener("click", () => {
         setMenuOpen(toggle.getAttribute("aria-expanded") !== "true");
     });
 
-    header.querySelectorAll("a").forEach(link => {
-        link.addEventListener("click", event => {
-            if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
-                return;
-            }
+    header.addEventListener("click", event => {
+        const link = event.target.closest("a");
+        if (!link || !header.contains(link)) {
+            return;
+        }
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+            return;
+        }
 
-            setMenuOpen(false);
+        setMenuOpen(false);
 
-            if (window.location.hash === link.hash) {
-                app.focus({ preventScroll: true });
-            }
-        });
+        if (window.location.hash === link.hash) {
+            app.focus({ preventScroll: true });
+        }
     });
 
     document.addEventListener("keydown", event => {
@@ -247,6 +257,13 @@ function renderPage() {
 const closeNavigation = createNavigation();
 renderPage();
 
+window.addEventListener("bonk-account-change", () => {
+    if (app.dataset.page === "account") {
+        renderPage();
+    }
+});
+window.BonkAccount.init();
+
 document.querySelector(".skip-link").addEventListener("click", event => {
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
         return;
@@ -259,6 +276,9 @@ document.querySelector(".skip-link").addEventListener("click", event => {
 window.addEventListener("hashchange", () => {
     closeNavigation();
     renderPage();
+    if (app.dataset.page === "account") {
+        window.BonkAccount.refresh();
+    }
     app.focus({ preventScroll: true });
     window.scrollTo(0, 0);
 });

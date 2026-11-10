@@ -6,9 +6,13 @@
     "scripts": {
         "build": "node code/javascript/build.mjs",
         "dev": "wrangler dev",
+        "test": "node --test worker/tests/*.test.mjs tests/*.test.mjs",
+        "db:migrate:local": "wrangler d1 migrations apply bonk-football-division --local",
+        "db:migrate:remote": "wrangler d1 migrations apply bonk-football-division --remote",
         "deploy": "wrangler deploy"
     },
     "devDependencies": {
+        "jsdom": "29.1.1",
         "wrangler": "4.160.0"
     }
 }
