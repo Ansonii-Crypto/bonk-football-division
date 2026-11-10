@@ -1,0 +1,14 @@
+{
+    "name": "bonk-football-division",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "node code/javascript/build.mjs",
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy"
+    },
+    "devDependencies": {
+        "wrangler": "4.160.0"
+    }
+}

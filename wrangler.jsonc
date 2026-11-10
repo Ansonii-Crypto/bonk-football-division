@@ -1,0 +1,13 @@
+{
+    "$schema": "./node_modules/wrangler/config-schema.json",
+    "name": "bonk-football-division",
+    "account_id": "9633a7a27a5588e48dc2d961c049abd5",
+    "compatibility_date": "2026-11-10",
+    "workers_dev": true,
+    "build": {
+        "command": "npm run build"
+    },
+    "assets": {
+        "directory": "./dist"
+    }
+}
