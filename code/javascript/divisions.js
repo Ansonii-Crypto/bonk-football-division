@@ -1,7 +1,7 @@
 "use strict";
 
 (() => {
-    const sectionNames = { general: "Event information", participation: "Participation", timeline: "Timeline", teams: "Teams and players", bracket: "Tournament bracket", campaigns: "Campaigns", referendums: "Referendums" };
+    const sectionNames = { general: "Event information", appearance: "Background", participation: "Participation", timeline: "Timeline", teams: "Teams and players", bracket: "Tournament bracket", campaigns: "Campaigns", referendums: "Referendums" };
     const roleNames = { "site-admin": "Site administrator", director: "Division director", organizer: "Organiser", editor: "Editor" };
 
     function element(tag, className, text) {
@@ -46,6 +46,29 @@
     function clone(value) { return JSON.parse(JSON.stringify(value)); }
     function id() { return `item-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
 
+    function backgroundImage(value) {
+        try {
+            const url = new URL(value);
+            return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
+        } catch {
+            return "";
+        }
+    }
+
+    function applyBackground(node, appearance, card = false) {
+        const colour = /^#[0-9a-f]{6}$/i.test(appearance?.backgroundColor || "") ? appearance.backgroundColor : "";
+        const image = backgroundImage(appearance?.backgroundImage || "");
+        const custom = Boolean(colour || image);
+        if (!card) node.hidden = !custom;
+        if (!custom) return;
+        node.style.backgroundColor = colour || "#080c14";
+        const layers = [];
+        if (card) layers.push("linear-gradient(rgb(8 12 20 / 72%), rgb(8 12 20 / 88%))");
+        else if (image) layers.push("linear-gradient(rgb(8 12 20 / 22%), rgb(8 12 20 / 22%))");
+        if (image) layers.push(`url(${JSON.stringify(image)})`);
+        node.style.backgroundImage = layers.length ? layers.join(", ") : "none";
+    }
+
     function invitation() {
         const panel = element("section", "division-host-invitation");
         panel.append(element("p", "division-eyebrow", "For tournament hosts"), element("h2", "", "Bring your event to the division."),
@@ -57,6 +80,7 @@
     function card(division, managed = false) {
         const node = element("a", "division-event-card");
         node.href = `#divisions/${encodeURIComponent(division.id)}`;
+        applyBackground(node, division.appearance, true);
         node.append(element("span", "division-state", managed && !division.publishedAt ? "Private draft" : division.status || "Upcoming"),
             element("h3", "", division.name), element("p", "", division.summary || "Open the event for its format, schedule and bracket."));
         const footer = element("div", "division-card-footer");
@@ -176,6 +200,10 @@
 
     function renderDivision(divisionId) {
         const section = element("section", "division-event-page");
+        const backdrop = element("div", "division-page-background");
+        backdrop.setAttribute("aria-hidden", "true");
+        backdrop.hidden = true;
+        section.append(backdrop);
         const back = element("a", "division-back", "← All divisions");
         back.href = "#divisions";
         section.append(back);
@@ -211,6 +239,8 @@
         }
         function paintPreview() {
             if (!preview) return;
+            applyBackground(backdrop, draft.appearance);
+            section.classList.toggle("division-custom-background", !backdrop.hidden);
             preview.replaceChildren(window.DivisionView.render(draft, { editing, editableSections: model.permissions?.editSections || [],
                 onSection(key) { selected = key; paintInspector(); inspector?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); } }));
         }
@@ -332,6 +362,7 @@
             inspector.append(element("p", "division-eyebrow", "Live editor"), navigation);
             const body = element("div", "division-inspector-body"); body.append(element("h2", "", selected === "members" ? "Management roles" : sectionNames[selected])); inspector.append(body);
             if (selected === "general") editGeneral(body);
+            if (selected === "appearance") editAppearance(body);
             if (selected === "participation") editParticipation(body);
             if (["timeline", "campaigns", "referendums"].includes(selected)) editCollection(body, selected);
             if (selected === "teams") editTeams(body);
@@ -346,6 +377,25 @@
             if (fields.includes("status")) inputField(body, "Event status", draft.status, value => { draft.status = value; }, { options: [["upcoming", "Upcoming"], ["registration", "Registration"], ["live", "Live"], ["completed", "Completed"]] });
             if (fields.includes("startDate")) inputField(body, "Start date", draft.startDate, value => { draft.startDate = value; }, { type: "date" });
             if (fields.includes("endDate")) inputField(body, "End date", draft.endDate, value => { draft.endDate = value; }, { type: "date" });
+        }
+        function editAppearance(body) {
+            const appearance = draft.appearance || { backgroundColor: "", backgroundImage: "" };
+            const colour = inputField(body, "Background colour", appearance.backgroundColor || "#080c14", value => {
+                draft.appearance = { ...appearance, backgroundColor: value };
+                appearance.backgroundColor = value;
+            }, { type: "color" });
+            colour.classList.add("division-colour-picker");
+            const image = inputField(body, "Background image URL", appearance.backgroundImage, value => {
+                draft.appearance = { ...appearance, backgroundImage: value };
+                appearance.backgroundImage = value;
+            }, { type: "url", maxLength: 2048 });
+            image.placeholder = "https://example.com/background.jpg";
+            body.append(element("p", "division-editor-note", "Paste a direct HTTPS image link. The image fills the event background; the colour is used underneath it."));
+            body.append(button("Reset background", () => {
+                draft.appearance = { backgroundColor: "", backgroundImage: "" };
+                change();
+                paintInspector();
+            }));
         }
         function editParticipation(body) {
             inputField(body, "Participation mode", draft.participation.mode, value => { draft.participation.mode = value; if (value === "solo") draft.participation.teamSize = 1; paintInspector(); }, { options: [["solo", "Individual players"], ["teams", "Team battles"]] });

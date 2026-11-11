@@ -265,3 +265,47 @@ test("division writes keep CSRF, body bounds, and pagination gates", async t => 
     const large = await request(env, `/api/manage/divisions/${division.id}`, { version: division.version, content: { ...division.content, description: "a".repeat(66000) } }, { cookie: admin, method: "PUT" });
     assert.equal(large.status, 400);
 });
+
+test("division appearance is editable by managers and published as a separate safe snapshot", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    const editor = await signIn(env, 1001, "Editor");
+    let division = await create(env, admin);
+    assert.deepEqual(division.content.appearance, { backgroundColor: "", backgroundImage: "" });
+    await grant(env, admin, division.id, "1001", "editor");
+    assert.ok(division.permissions.editSections.includes("appearance"));
+    const legacy = { ...division.content };
+    delete legacy.appearance;
+    const legacyResponse = await request(env, `/api/manage/divisions/${division.id}`, { version: division.version, content: legacy }, { cookie: editor, method: "PUT" });
+    assert.equal(legacyResponse.status, 200);
+    division = (await legacyResponse.json()).division;
+    assert.deepEqual(division.content.appearance, { backgroundColor: "", backgroundImage: "" });
+    assert.ok(division.permissions.editSections.includes("appearance"));
+    const publishedAppearance = { backgroundColor: "#123aBC", backgroundImage: "https://example.com/background.png?theme=ice" };
+    division = await save(env, editor, division, { appearance: publishedAppearance });
+    assert.equal((await request(env, `/api/manage/divisions/${division.id}/publish`, { version: division.version }, { cookie: admin })).status, 200);
+    assert.deepEqual((await (await request(env, `/api/divisions/${division.id}`)).json()).division.content.appearance, publishedAppearance);
+    assert.deepEqual((await (await request(env, "/api/divisions")).json()).divisions[0].appearance, publishedAppearance);
+    const draftAppearance = { backgroundColor: "#654321", backgroundImage: "" };
+    division = await save(env, editor, division, { appearance: draftAppearance });
+    assert.deepEqual((await (await request(env, "/api/manage/divisions", undefined, { cookie: editor })).json()).divisions[0].appearance, draftAppearance);
+    assert.deepEqual((await (await request(env, "/api/divisions")).json()).divisions[0].appearance, publishedAppearance);
+    assert.equal((await request(env, `/api/manage/divisions/${division.id}`, { version: division.version, content: {
+        ...division.content, appearance: draftAppearance, participation: { ...division.content.participation, registration: "open" }
+    } }, { cookie: editor, method: "PUT" })).status, 403);
+    for (const invalid of [
+        { backgroundColor: "red", backgroundImage: "" },
+        { backgroundColor: "#fff", backgroundImage: "" },
+        { backgroundColor: "", backgroundImage: "javascript:alert(1)" },
+        { backgroundColor: "", backgroundImage: "data:image/png;base64,abc" },
+        { backgroundColor: "", backgroundImage: "http://example.com/image.png" },
+        { backgroundColor: "", backgroundImage: "/image.png" },
+        { backgroundColor: "", backgroundImage: "https://user:password@example.com/image.png" },
+        { backgroundColor: "", backgroundImage: "https://example.com/image\n.png" },
+        { backgroundColor: "", backgroundImage: `https://example.com/${"a".repeat(2048)}` },
+        { backgroundColor: "", backgroundImage: "", extra: "unsupported" }
+    ]) {
+        assert.equal((await request(env, `/api/manage/divisions/${division.id}`, { version: division.version,
+            content: { ...division.content, appearance: invalid } }, { cookie: editor, method: "PUT" })).status, 400);
+    }
+});

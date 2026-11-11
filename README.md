@@ -110,12 +110,14 @@ Open **Divisions** to create a division as the site administrator or find events
 
 The event editor uses the same renderer as the public page. Switch between **View** and **Edit**, select a section, and change its fields while the preview updates. **Save draft** stores changes privately; **Publish** promotes the saved draft. **Unpublish** withdraws the public copy while retaining the draft. Version checks prevent a stale editor from overwriting a newer save.
 
+Under **Edit → Background**, choose a colour or paste a direct HTTPS image URL. The background updates in the preview and appears on the public event page and division card after saving and publishing. **Reset background** restores the site's default background.
+
 | Role | Event content | Publication | Management roles |
 | --- | --- | --- | --- |
 | Site administrator | All divisions and sections | Publish and unpublish | Assign or remove any division role |
 | Director | All sections of assigned divisions | Publish and unpublish | Assign or remove organizers and editors |
 | Organizer | Event information, timeline, participation, teams, bracket, campaigns and referendums | Draft only | None |
-| Editor | Description, campaigns and referendums | Draft only | None |
+| Editor | Background, description, campaigns and referendums | Draft only | None |
 
 Roles are scoped to one division and checked by the Worker on every management request. Assign a role using the person's **Bonk player ID** after they have signed in to this site. A division role grants no assessment or site administrator privileges.
 

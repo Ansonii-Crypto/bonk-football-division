@@ -5,6 +5,28 @@
 
 .page.page--division-detail {
     padding-block: 2.5rem;
+    isolation: isolate;
+}
+
+.division-page-background {
+    position: fixed;
+    inset: 5rem 0 0;
+    z-index: -1;
+    pointer-events: none;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
+.division-page-background[hidden] {
+    display: none;
+}
+
+.division-custom-background .division-back {
+    padding: 0.4rem 0.75rem;
+    background: rgb(8 12 20 / 82%);
+    border: 1px solid #40596e;
+    border-radius: 0.5rem;
 }
 
 .division-host-invitation {
@@ -78,6 +100,8 @@
     padding: 1.5rem;
     color: var(--text);
     background: #152333;
+    background-position: center;
+    background-size: cover;
     border: 1px solid #40596e;
     border-radius: 0.9rem;
     text-decoration: none;
@@ -209,6 +233,12 @@
 
 .division-field:focus {
     border-color: #92c3d7;
+}
+
+.division-colour-picker {
+    height: 3rem;
+    padding: 0.25rem;
+    cursor: pointer;
 }
 
 textarea.division-field {

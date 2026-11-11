@@ -1,7 +1,7 @@
-const SECTIONS = ["general", "participation", "timeline", "teams", "bracket", "campaigns", "referendums"];
+const SECTIONS = ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums"];
 const GENERAL_FIELDS = ["name", "summary", "description", "status", "startDate", "endDate"];
 const ROLES = ["director", "organizer", "editor"];
-const CONTENT_FIELDS = [...GENERAL_FIELDS, "participation", "timeline", "campaigns", "referendums", "teams", "results"];
+const CONTENT_FIELDS = [...GENERAL_FIELDS, "appearance", "participation", "timeline", "campaigns", "referendums", "teams", "results"];
 
 function object(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -20,6 +20,34 @@ function text(value, maximum, required = false) {
 
 function identifier(value) {
     return typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value);
+}
+
+function appearance(content) {
+    return { backgroundColor: content.appearance?.backgroundColor ?? "", backgroundImage: content.appearance?.backgroundImage ?? "" };
+}
+
+function validAppearance(value) {
+    if (value === undefined) {
+        return true;
+    }
+    if (!object(value) || Object.keys(value).some(key => !["backgroundColor", "backgroundImage"].includes(key))) {
+        return false;
+    }
+    const color = value.backgroundColor === undefined ? "" : value.backgroundColor;
+    const image = value.backgroundImage === undefined ? "" : value.backgroundImage;
+    if (typeof color !== "string" || color !== "" && !/^#[0-9a-f]{6}$/i.test(color)
+        || typeof image !== "string" || image.length > 2048 || /[\u0000-\u0020\u007f]/.test(image)) {
+        return false;
+    }
+    if (image === "") {
+        return true;
+    }
+    try {
+        const url = new URL(image);
+        return /^https:\/\//i.test(image) && url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password;
+    } catch {
+        return false;
+    }
 }
 
 function date(value) {
@@ -62,6 +90,7 @@ export function divisionRequestMethods(path) {
 function defaultContent(name, summary) {
     return {
         name, summary, description: "", status: "upcoming", startDate: "", endDate: "",
+        appearance: { backgroundColor: "", backgroundImage: "" },
         participation: { mode: "solo", teamSize: 1, registration: "closed", description: "" },
         timeline: [], campaigns: [], referendums: [], teams: [], results: {}
     };
@@ -73,6 +102,9 @@ function validateContent(content, positiveBonkId) {
     }
     if (!text(content.name, 120, true) || !text(content.summary, 300) || !text(content.description, 6000)) {
         return "Enter a division name (up to 120 characters), a short summary, and a description up to 6000 characters.";
+    }
+    if (!validAppearance(content.appearance)) {
+        return "Use a six-digit hex background color and an optional absolute HTTPS image URL without login details.";
     }
     if (!["upcoming", "registration", "live", "completed"].includes(content.status)
         || !date(content.startDate) || !date(content.endDate)) {
@@ -156,7 +188,7 @@ function validateContent(content, positiveBonkId) {
 
 function permissions(role) {
     return {
-        editSections: role === "editor" ? ["general", "campaigns", "referendums"] : [...SECTIONS],
+        editSections: role === "editor" ? ["general", "appearance", "campaigns", "referendums"] : [...SECTIONS],
         generalFields: role === "editor" ? ["description"] : [...GENERAL_FIELDS],
         publish: ["site-admin", "director"].includes(role),
         manageMembers: ["site-admin", "director"].includes(role),
@@ -165,8 +197,10 @@ function permissions(role) {
 }
 
 function managedDivision(row, role) {
+    const content = JSON.parse(row.draft_json);
+    content.appearance = appearance(content);
     return {
-        id: row.id, content: JSON.parse(row.draft_json), version: row.version,
+        id: row.id, content, version: row.version,
         publishedAt: row.published_at, publishedVersion: row.published_version,
         updatedAt: row.updated_at, role, permissions: permissions(role)
     };
@@ -174,6 +208,7 @@ function managedDivision(row, role) {
 
 function publicContent(serialized) {
     const content = JSON.parse(serialized);
+    content.appearance = appearance(content);
     content.teams = content.teams.map(team => ({
         ...team,
         players: team.players.map(player => ({ username: player.username }))
@@ -184,6 +219,7 @@ function publicContent(serialized) {
 function summary(row, managed = false) {
     const content = JSON.parse(managed ? row.draft_json : row.published_json);
     const data = { id: row.id, name: content.name, summary: content.summary, status: content.status,
+        appearance: appearance(content),
         startDate: content.startDate, endDate: content.endDate, publishedAt: row.published_at,
         updatedAt: managed ? row.updated_at : row.published_at };
     if (managed) {
@@ -352,9 +388,9 @@ export async function handleDivisionRequest(request, env, url, account, readJson
     }
     if (role === "editor") {
         const previous = JSON.parse(row.draft_json);
-        const allowed = new Set(["description", "campaigns", "referendums"]);
+        const allowed = new Set(["description", "appearance", "campaigns", "referendums"]);
         if (CONTENT_FIELDS.some(key => !allowed.has(key) && JSON.stringify(previous[key]) !== JSON.stringify(body.content[key]))) {
-            return json({ error: "Editors can update the description, campaigns and referendums only." }, 403);
+            return json({ error: "Editors can update appearance, the description, campaigns and referendums only." }, 403);
         }
     }
     const updated = await env.DB.prepare(`UPDATE divisions SET draft_json = ?, version = version + 1,

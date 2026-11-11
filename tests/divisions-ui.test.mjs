@@ -14,7 +14,7 @@ const content = () => ({
     timeline: [], campaigns: [], referendums: [], teams: [], results: {}
 });
 const permissions = {
-    editSections: ["general", "participation", "timeline", "teams", "bracket", "campaigns", "referendums"],
+    editSections: ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums"],
     generalFields: ["name", "summary", "description", "status", "startDate", "endDate"],
     publish: true, manageMembers: true, assignRoles: ["director", "organizer", "editor"]
 };
@@ -86,11 +86,23 @@ test("an administrator creates a private division, previews a section and publis
     description.value = "The new event description";
     description.dispatchEvent(new window.Event("input", { bubbles: true }));
     assert.match(window.document.querySelector(".division-live-preview").textContent, /The new event description/);
+    button(window, "Background").click();
+    const colour = window.document.querySelector(".division-inspector input[type=color]");
+    colour.value = "#384c68";
+    colour.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const image = window.document.querySelector(".division-inspector input[type=url]");
+    image.value = "https://example.com/football.jpg";
+    image.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const backdrop = window.document.querySelector(".division-page-background");
+    assert.equal(backdrop.hidden, false);
+    assert.equal(backdrop.style.backgroundColor, "rgb(56, 76, 104)");
+    assert.match(backdrop.style.backgroundImage, /https:\/\/example.com\/football.jpg/);
     assert.equal(button(window, "Publish").disabled, true, "unsaved content cannot be published");
     button(window, "Save draft").click();
     await tick();
     assert.equal(model.publishedAt, null, "saving does not publish");
     assert.equal(model.content.description, "The new event description");
+    assert.deepEqual(model.content.appearance, { backgroundColor: "#384c68", backgroundImage: "https://example.com/football.jpg" });
     button(window, "Publish").click();
     await tick();
     assert.equal(model.publishedVersion, 2);
@@ -98,14 +110,16 @@ test("an administrator creates a private division, previews a section and publis
 });
 
 test("a public division opens its published event content without management controls", async t => {
+    const published = { ...content(), appearance: { backgroundColor: "#384c68", backgroundImage: "" } };
     const window = await page(t, async path => {
         assert.equal(path, "/api/divisions/2");
-        return Response.json({ division: { id: 2, content: content(), publishedAt: 1 } });
+        return Response.json({ division: { id: 2, content: published, publishedAt: 1 } });
     }, "#divisions/2", null);
     assert.equal(window.document.querySelector(".division-event-title").textContent, "Football cup");
     assert.equal(window.document.querySelector(".division-management-bar"), null);
     assert.ok(window.document.querySelector("#site-header .navigation"));
     assert.equal(window.document.querySelector("#app").dataset.page, "divisions");
+    assert.equal(window.document.querySelector(".division-page-background").style.backgroundColor, "rgb(56, 76, 104)");
 });
 
 test("typing during a draft save keeps newer preview edits unsaved", async t => {
