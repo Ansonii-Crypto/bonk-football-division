@@ -68,7 +68,7 @@ The `bonk-football-division.com` custom domain is attached through `wrangler.jso
 
 ## Bonk accounts
 
-Sign-in follows the old site's working Bonk flow: the Worker sends the username and unchanged password over HTTPS to the fixed `https://bonk2.io/scripts/login_legacy.php` endpoint with `remember=false`. It requires a successful response containing a valid Bonk player ID, username, and provider token. This uses Bonk's legacy login endpoint, rather than OAuth.
+Sign-in follows the old site's working Bonk flow: the Worker sends the username and password exactly as entered over HTTPS to the fixed `https://bonk2.io/scripts/login_legacy.php` endpoint with `remember=false`. It requires a successful response containing a valid Bonk player ID, username, and provider token. This uses Bonk's legacy login endpoint, rather than OAuth. Spaces can be part of older Bonk usernames, so they are preserved.
 
 Passwords and Bonk tokens are not saved to the database, returned to the browser, or logged by the application. The Worker saves the verified Bonk ID, username, selected avatar code when available, and a hash of a new random site session token. The interface currently uses the username initial as its avatar. Your browser's password manager may separately offer to remember your password.
 
@@ -84,9 +84,11 @@ npm test
 
 Tests use mocked provider responses and synthetic credentials. They do not sign into a real Bonk account.
 
-## Later: public Bonk player lookup
+## Known Bonk account suggestions
 
-Revisit the [documented Bonkverse developer API](https://bonkverse.io/developers/) when public account search is ready. It needs a free API key stored only on the Worker and can return replay-observed levels, archived games, known account IDs and estimated join dates. Its documented player lookup uses usernames. Label the source, link to Bonkverse profiles and respect hidden levels; the data is not a live Bonk account feed. Do not use Bonk Leagues' internal search endpoint as an undocumented dependency.
+The admin search suggests names from Bonk accounts verified by sign-in on this site and names already used in assessments. Results identify their source; only verified sign-ins supply a trusted Bonk player ID. The admin-only `/api/admin/bonk-accounts` endpoint returns a small ranked list for a partial name. This is a directory of accounts known to this site, not a complete Bonk account index.
+
+The [documented Bonkverse API](https://docs.bonkverse.io/api) provides exact username and bulk lookups of names already known, but no documented partial-name search. Its replay-based records may not include every player or their Bonk player ID. A future exact lookup would require a Bonkverse API key stored only on the Worker, and must follow [Bonkverse's attribution and privacy terms](https://bonkverse.io/developers/terms/). This site does not call an undocumented search endpoint.
 
 ## Assessment browsing
 

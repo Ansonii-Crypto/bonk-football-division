@@ -37,7 +37,7 @@ function tierFromTotal(total) {
 }
 
 function validateAssessment(body, positiveBonkId) {
-    if (!body || typeof body.playerName !== "string" || !body.playerName.trim() || body.playerName.trim().length > 100) {
+    if (!body || typeof body.playerName !== "string" || !body.playerName.trim() || body.playerName.length > 100) {
         return { error: "Enter a player name (up to 100 characters)." };
     }
     if (body.playerBonkId !== undefined && body.playerBonkId !== null && body.playerBonkId !== ""
@@ -59,7 +59,7 @@ function validateAssessment(body, positiveBonkId) {
     }
     const total = body.values.reduce((sum, value) => sum + value, 0);
     return {
-        values: [body.playerName.trim(), body.playerBonkId ? positiveBonkId(body.playerBonkId) : null,
+        values: [body.playerName, body.playerBonkId ? positiveBonkId(body.playerBonkId) : null,
             body.className, body.date, body.notes || "", ...body.values, total, tierFromTotal(total)]
     };
 }
@@ -217,4 +217,53 @@ export async function handleAssessmentRequest(request, env, url, account, readJs
     }
     return request.method === "GET" ? getAssessment(env, id, isAdminRoute, json)
         : updateAssessment(request, env, id, account, readJson, json, positiveBonkId);
+}
+
+export async function searchKnownBonkAccounts(env, url, json) {
+    const query = (url.searchParams.get("q") || "").trim();
+    const limit = positiveInteger(url.searchParams.get("limit") || "6", 8);
+    if (query.length > 100 || !limit) {
+        return json({ error: "Enter a shorter account search and a limit from 1 to 8." }, 400);
+    }
+    if (query.length < 2) {
+        return json({ accounts: [] });
+    }
+
+    const candidateLimit = Math.min(limit * 4, 32);
+    const prefixRank = column => `CASE WHEN SUBSTR(LOWER(${column}), 1, LENGTH(?)) = LOWER(?) THEN 0 ELSE 1 END`;
+    const [verified, assessed] = await Promise.all([
+        env.DB.prepare(`
+            SELECT username, bonk_id FROM bonk_users
+            WHERE INSTR(LOWER(username), LOWER(?)) > 0
+            ORDER BY ${prefixRank("username")}, username COLLATE NOCASE, bonk_id
+            LIMIT ?
+        `).bind(query, query, query, candidateLimit).all(),
+        env.DB.prepare(`
+            SELECT player_name AS username FROM assessments
+            WHERE INSTR(LOWER(player_name), LOWER(?)) > 0
+            GROUP BY player_name COLLATE NOCASE
+            ORDER BY ${prefixRank("player_name")}, player_name COLLATE NOCASE
+            LIMIT ?
+        `).bind(query, query, query, candidateLimit).all()
+    ]);
+
+    const unique = new Map();
+    for (const row of verified.results) {
+        if (typeof row.username === "string" && row.username.length > 0 && typeof row.bonk_id === "string") {
+            unique.set(row.username.toLowerCase(), { username: row.username, bonkId: row.bonk_id, source: "verified" });
+        }
+    }
+    for (const row of assessed.results) {
+        if (typeof row.username === "string" && row.username.length > 0 && !unique.has(row.username.toLowerCase())) {
+            unique.set(row.username.toLowerCase(), { username: row.username, bonkId: null, source: "assessment" });
+        }
+    }
+    const lowerQuery = query.toLowerCase();
+    const accounts = [...unique.values()].sort((left, right) => {
+        const rank = Number(!left.username.toLowerCase().startsWith(lowerQuery))
+            - Number(!right.username.toLowerCase().startsWith(lowerQuery));
+        return rank || left.username.localeCompare(right.username, "en", { sensitivity: "base" })
+            || Number(right.source === "verified") - Number(left.source === "verified");
+    }).slice(0, limit);
+    return json({ accounts });
 }

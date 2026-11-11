@@ -10,6 +10,7 @@
         ["points_asc", "Lowest points"],
         ["name_asc", "Player name A–Z"]
     ];
+    let suggestionId = 0;
     const state = {
         owner: "",
         tab: "assessments",
@@ -21,7 +22,8 @@
         detail: null,
         loading: false,
         pending: false,
-        error: ""
+        error: "",
+        prefill: null
     };
     let requestVersion = 0;
 
@@ -93,6 +95,212 @@
         }
     }
 
+    function attachAccountSuggestions(input, field, onChoose) {
+        const list = element("div", "admin-account-suggestions");
+        const listId = `admin-account-suggestions-${++suggestionId}`;
+        list.id = listId;
+        list.setAttribute("role", "listbox");
+        list.setAttribute("aria-label", "Known Bonk account suggestions");
+        list.hidden = true;
+        field.classList.add("admin-account-field");
+        field.append(list);
+        input.autocomplete = "off";
+        input.setAttribute("role", "combobox");
+        input.setAttribute("aria-autocomplete", "list");
+        input.setAttribute("aria-controls", listId);
+        input.setAttribute("aria-expanded", "false");
+
+        let timer = 0;
+        let controller = null;
+        let timeout = 0;
+        let revision = 0;
+        let options = [];
+        let active = -1;
+        let disposed = false;
+
+        function close() {
+            list.hidden = true;
+            input.setAttribute("aria-expanded", "false");
+            input.removeAttribute("aria-activedescendant");
+            active = -1;
+        }
+
+        function cancel() {
+            ++revision;
+            window.clearTimeout(timer);
+            window.clearTimeout(timeout);
+            controller?.abort();
+            controller = null;
+            close();
+        }
+
+        function showMessage(message) {
+            const notice = element("p", "admin-suggestion-message", message);
+            notice.setAttribute("role", "status");
+            list.replaceChildren(notice);
+            options = [];
+            list.hidden = false;
+            input.setAttribute("aria-expanded", "true");
+        }
+
+        function setActive(index) {
+            active = index;
+            options.forEach((option, position) => {
+                option.classList.toggle("is-active", position === active);
+                option.setAttribute("aria-selected", String(position === active));
+            });
+            if (active >= 0) {
+                input.setAttribute("aria-activedescendant", options[active].id);
+                options[active].scrollIntoView?.({ block: "nearest" });
+            } else {
+                input.removeAttribute("aria-activedescendant");
+            }
+        }
+
+        function choose(account) {
+            if (disposed || list.hidden) {
+                return;
+            }
+            cancel();
+            input.value = account.username;
+            onChoose(account);
+        }
+
+        function showAccounts(accounts) {
+            list.replaceChildren();
+            options = [];
+            if (!accounts.length) {
+                showMessage("No known names match. You can still enter a username yourself.");
+                return;
+            }
+            for (const account of accounts) {
+                const option = element("div", "admin-suggestion-option");
+                option.id = `${listId}-option-${options.length}`;
+                option.account = account;
+                option.setAttribute("role", "option");
+                option.setAttribute("aria-selected", "false");
+                const avatar = element("span", "admin-suggestion-avatar", Array.from(account.username.trimStart())[0]?.toUpperCase() || "?");
+                avatar.setAttribute("aria-hidden", "true");
+                const text = element("span", "admin-suggestion-text");
+                text.append(element("span", "admin-suggestion-name", `“${account.username}”`),
+                    element("span", "admin-suggestion-source", account.source === "verified"
+                        ? `Verified sign-in · Bonk player ID ${account.bonkId}` : "From an assessment · identity not verified"));
+                option.append(avatar, text);
+                option.addEventListener("pointerdown", event => {
+                    event.preventDefault();
+                    choose(account);
+                });
+                option.addEventListener("click", () => choose(account));
+                options.push(option);
+                list.append(option);
+            }
+            list.append(element("p", "admin-suggestion-caption", "Known to Bonk Football Division"));
+            list.hidden = false;
+            input.setAttribute("aria-expanded", "true");
+            setActive(-1);
+        }
+
+        async function lookup(query, version) {
+            if (disposed || !input.isConnected || version !== revision) {
+                return;
+            }
+            controller = new AbortController();
+            const current = controller;
+            const requestTimeout = window.setTimeout(() => current.abort(), 8000);
+            timeout = requestTimeout;
+            showMessage("Searching known accounts…");
+            try {
+                const parameters = new URLSearchParams({ q: query, limit: "6" });
+                const response = await fetch(`/api/admin/bonk-accounts?${parameters}`, {
+                    headers: { Accept: "application/json" },
+                    credentials: "same-origin",
+                    cache: "no-store",
+                    redirect: "error",
+                    signal: current.signal
+                });
+                if (!response.ok) {
+                    if ([401, 403].includes(response.status)) {
+                        window.BonkAccount.refresh(true);
+                    }
+                    throw new Error("Suggestions unavailable");
+                }
+                const data = await response.json();
+                if (!Array.isArray(data?.accounts)) {
+                    throw new Error("Suggestions unavailable");
+                }
+                if (disposed || !input.isConnected || version !== revision || current.signal.aborted) {
+                    return;
+                }
+                const accounts = data.accounts.slice(0, 8).filter(account => account
+                    && typeof account.username === "string" && account.username.length > 0 && account.username.length <= 100
+                    && (account.source === "verified" && typeof account.bonkId === "string" && /^[1-9]\d{0,15}$/.test(account.bonkId)
+                        || account.source === "assessment" && account.bonkId === null));
+                showAccounts(accounts);
+            } catch {
+                if (!disposed && input.isConnected && version === revision && !current.signal.aborted) {
+                    showMessage("Suggestions are unavailable. You can still search or enter a name manually.");
+                }
+            } finally {
+                window.clearTimeout(requestTimeout);
+                if (timeout === requestTimeout) {
+                    timeout = 0;
+                }
+                if (controller === current) {
+                    controller = null;
+                }
+            }
+        }
+
+        function onInput() {
+            cancel();
+            const query = input.value.trim();
+            if (query.length < 2) {
+                return;
+            }
+            const version = revision;
+            timer = window.setTimeout(() => void lookup(query, version), 250);
+        }
+
+        function onKeydown(event) {
+            if (event.key === "Escape" && !list.hidden) {
+                event.preventDefault();
+                cancel();
+            } else if (event.key === "Tab") {
+                cancel();
+            } else if (["ArrowDown", "ArrowUp"].includes(event.key) && options.length && !list.hidden) {
+                event.preventDefault();
+                setActive((active + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);
+            } else if (event.key === "Enter" && active >= 0 && !list.hidden) {
+                event.preventDefault();
+                choose(options[active].account);
+            }
+        }
+
+        function onOutside(event) {
+            if (!field.contains(event.target)) {
+                cancel();
+            }
+        }
+
+        function dispose() {
+            if (disposed) {
+                return;
+            }
+            disposed = true;
+            cancel();
+            document.removeEventListener("pointerdown", onOutside);
+            window.removeEventListener("hashchange", dispose);
+            window.removeEventListener("bonk-account-change", dispose);
+        }
+
+        input.addEventListener("input", onInput);
+        input.addEventListener("keydown", onKeydown);
+        document.addEventListener("pointerdown", onOutside);
+        window.addEventListener("hashchange", dispose, { once: true });
+        window.addEventListener("bonk-account-change", dispose, { once: true });
+        return dispose;
+    }
+
     function localDate() {
         const now = new Date();
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -115,7 +323,7 @@
         if (session.checked && (!session.account || session.account.isAdmin !== true)) {
             ++requestVersion;
             Object.assign(state, { owner: "", tab: "assessments", mode: "browse", list: null,
-                detail: null, loading: false, pending: false, error: "" });
+                detail: null, loading: false, pending: false, error: "", prefill: null });
         }
         if (!session.checked) {
             return message(section, "Checking administrator access", "Verifying your Bonk account session.");
@@ -131,7 +339,8 @@
         }
         if (state.owner !== session.account.bonkId) {
             Object.assign(state, { owner: session.account.bonkId, tab: "assessments", mode: "browse",
-                query: "", sort: "newest", page: 1, list: null, detail: null, loading: false, pending: false, error: "" });
+                query: "", sort: "newest", page: 1, list: null, detail: null, loading: false,
+                pending: false, error: "", prefill: null });
         }
 
         const shell = element("div", "admin-shell");
@@ -141,6 +350,7 @@
         const panel = element("div", "admin-panel");
         panel.id = "admin-tab-panel";
         panel.setAttribute("role", "tabpanel");
+        let autocompleteCleanup = null;
         const tabButtons = [
             ["assessments", "Assessments"],
             ["new", "New assessment"]
@@ -251,12 +461,20 @@
             const searchButton = element("button", "admin-button", "Search");
             searchButton.type = "submit";
             searchForm.append(searchLabel, searchButton);
-            searchForm.addEventListener("submit", event => {
-                event.preventDefault();
-                state.query = search.value.trim();
+            function submitSearch() {
+                state.query = search.value;
                 state.page = 1;
                 state.list = null;
                 loadList();
+            }
+            searchForm.addEventListener("submit", event => {
+                event.preventDefault();
+                submitSearch();
+            });
+            search.addEventListener("input", () => { state.prefill = null; });
+            autocompleteCleanup = attachAccountSuggestions(search, searchLabel, account => {
+                state.prefill = account;
+                submitSearch();
             });
             const sortLabel = element("label", "admin-sort", "Sort by");
             const sort = element("select", "admin-field");
@@ -294,6 +512,20 @@
             if (!state.list.assessments.length) {
                 browse.append(element("p", "admin-no-results", state.query
                     ? "No assessments match that search." : "No assessments have been added yet."));
+                if (state.query) {
+                    const create = element("button", "admin-button admin-button--primary admin-create-from-search", "Create an assessment");
+                    create.type = "button";
+                    create.addEventListener("click", () => {
+                        if (!state.prefill || state.prefill.username !== state.query) {
+                            state.prefill = /^\d+$/.test(state.query) ? null
+                                : { username: state.query, bonkId: null, source: "assessment" };
+                        }
+                        state.tab = "new";
+                        state.mode = "create";
+                        paint();
+                    });
+                    browse.append(create);
+                }
                 return browse;
             }
             const list = element("div", "admin-assessment-list");
@@ -389,6 +621,7 @@
 
         function renderForm(editing) {
             const assessment = editing ? state.detail : null;
+            const prefill = editing ? null : state.prefill;
             const form = element("form", "admin-form");
             const heading = element("div", "admin-panel-heading");
             heading.append(element("h2", "", editing ? "Edit assessment" : "New assessment"),
@@ -408,13 +641,28 @@
             playerName.type = "text";
             playerName.maxLength = 100;
             playerName.required = true;
-            playerName.value = assessment?.playerName || "";
+            playerName.value = assessment?.playerName ?? prefill?.username ?? "";
             const playerBonkId = field("Bonk player ID (optional)", element("input"));
             playerBonkId.type = "text";
             playerBonkId.inputMode = "numeric";
             playerBonkId.pattern = "[1-9][0-9]*";
             playerBonkId.maxLength = 16;
-            playerBonkId.value = assessment?.playerBonkId || "";
+            playerBonkId.value = assessment?.playerBonkId ?? (prefill?.source === "verified" ? prefill.bonkId : "") ?? "";
+            let linkedName = playerBonkId.value ? playerName.value : null;
+            playerName.addEventListener("input", () => {
+                if (linkedName && playerName.value !== linkedName) {
+                    playerBonkId.value = "";
+                    linkedName = null;
+                }
+            });
+            autocompleteCleanup = attachAccountSuggestions(playerName, playerName.parentElement, account => {
+                playerName.value = account.username;
+                playerBonkId.value = account.source === "verified" ? account.bonkId : "";
+                linkedName = account.source === "verified" ? account.username : null;
+                if (!editing) {
+                    state.prefill = account;
+                }
+            });
             const className = field("Class", element("select"));
             for (const value of ["", ...classes]) {
                 const option = element("option", "", value || "Not recorded");
@@ -510,6 +758,7 @@
                     state.tab = "assessments";
                     state.mode = "view";
                     state.error = "";
+                    state.prefill = null;
                     paint();
                 } catch (error) {
                     if (!section.isConnected) {
@@ -543,6 +792,8 @@
             if (!section.isConnected && panel.hasChildNodes()) {
                 return;
             }
+            autocompleteCleanup?.();
+            autocompleteCleanup = null;
             tabButtons.forEach((button, index) => {
                 const selected = state.tab === (index === 0 ? "assessments" : "new");
                 button.setAttribute("aria-selected", String(selected));

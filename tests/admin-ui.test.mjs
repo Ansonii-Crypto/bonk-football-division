@@ -119,3 +119,79 @@ test("admin can browse read-only, edit with a version, and create an assessment"
     assert.match(document.querySelector(".account-id").textContent, /Bonk player ID: 3177088/);
     assert.ok(document.querySelector(".account-dashboard-card a[href='#admin']"));
 });
+
+test("known account suggestions support keyboard selection and prefill only verified IDs", async t => {
+    const lookupQueries = [];
+    const window = await page(t, admin, path => {
+        if (path.startsWith("/api/admin/assessments?")) {
+            return Response.json({ assessments: [], page: 1, pages: 1, total: 0 });
+        }
+        if (path.startsWith("/api/admin/bonk-accounts?")) {
+            const query = new URL(path, window.location.origin).searchParams.get("q");
+            lookupQueries.push(query);
+            return Response.json({ accounts: query === "Leg" ? [
+                { username: "  Legacy  ", bonkId: "7654321", source: "verified" },
+                { username: "LegacyTwo", bonkId: null, source: "assessment" }
+            ] : [{ username: "Assessed Only", bonkId: null, source: "assessment" }] });
+        }
+        throw new Error(`Unexpected request ${path}`);
+    });
+    const { document } = window;
+    const search = document.querySelector(".admin-search input[name=q]");
+    search.value = "Leg";
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 320));
+    await tick();
+    assert.deepEqual(lookupQueries, ["Leg"]);
+    assert.equal(search.getAttribute("aria-expanded"), "true");
+    assert.match(document.querySelector(".admin-suggestion-name").textContent, /“  Legacy  ”/);
+    search.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    assert.ok(search.getAttribute("aria-activedescendant"));
+    search.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await tick();
+    assert.equal(document.querySelector(".admin-search input[name=q]").value, "  Legacy  ");
+    document.querySelector(".admin-create-from-search").click();
+    const formName = document.querySelector(".admin-form-grid input[type=text]");
+    const formId = document.querySelector(".admin-form-grid input[inputmode=numeric]");
+    assert.equal(formName.value, "  Legacy  ");
+    assert.equal(formId.value, "7654321");
+
+    formName.value = "Ass";
+    formName.dispatchEvent(new window.Event("input", { bubbles: true }));
+    assert.equal(formId.value, "", "editing a chosen username clears its linked ID");
+    await new Promise(resolve => setTimeout(resolve, 320));
+    await tick();
+    const assessmentOption = document.querySelector(".admin-suggestion-option");
+    assessmentOption.dispatchEvent(new window.Event("pointerdown", { bubbles: true, cancelable: true }));
+    assert.equal(formName.value, "Assessed Only");
+    assert.equal(formId.value, "", "assessment-only names never auto-fill an unverified ID");
+});
+
+test("a delayed suggestion response cannot replace newer matches", async t => {
+    let resolveOlder;
+    const window = await page(t, admin, path => {
+        if (path.startsWith("/api/admin/assessments?")) {
+            return Response.json({ assessments: [], page: 1, pages: 1, total: 0 });
+        }
+        const query = new URL(path, window.location.origin).searchParams.get("q");
+        if (query === "Al") {
+            return new Promise(resolve => { resolveOlder = resolve; });
+        }
+        return Response.json({ accounts: [{ username: "Beta", bonkId: "2345", source: "verified" }] });
+    });
+    const search = window.document.querySelector(".admin-search input[name=q]");
+    search.value = "Al";
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 320));
+    assert.equal(typeof resolveOlder, "function");
+    search.value = "Be";
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 320));
+    await tick();
+    assert.match(window.document.querySelector(".admin-suggestion-name").textContent, /Beta/);
+    resolveOlder(Response.json({ accounts: [{ username: "Alpha", bonkId: "1234", source: "verified" }] }));
+    await tick();
+    assert.match(window.document.querySelector(".admin-suggestion-name").textContent, /Beta/);
+    search.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    assert.equal(search.getAttribute("aria-expanded"), "false");
+});

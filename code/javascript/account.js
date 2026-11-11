@@ -419,7 +419,7 @@
             if (state.pending) {
                 return;
             }
-            const credentials = { username: username.value.trim(), password: password.value };
+            const credentials = { username: username.value, password: password.value };
             state.pending = true;
             state.error = "";
             const version = ++requestVersion;

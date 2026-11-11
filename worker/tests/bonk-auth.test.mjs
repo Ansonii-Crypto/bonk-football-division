@@ -131,7 +131,7 @@ test("password whitespace, Unicode and form-sensitive characters reach Bonk unch
     const calls = provider(t);
     await signIn(env, { username: " SIoppy ", password });
     const form = new URLSearchParams(calls[0].options.body);
-    assert.equal(form.get("username"), "SIoppy");
+    assert.equal(form.get("username"), " SIoppy ");
     assert.equal(form.get("password"), password);
 });
 
@@ -216,17 +216,18 @@ test("IP and per-username budgets block calls and missing bindings fail closed",
     for (let i = 0; i < 10; i++) {
         assert.equal((await request(env, "/api/bonk/login", { username: " Demo ", password: "test" })).status, 401);
     }
-    const limited = await request(env, "/api/bonk/login", { username: "dEmO", password: "test" });
+    const limited = await request(env, "/api/bonk/login", { username: " dEmO ", password: "test" });
     assert.equal(limited.status, 429);
     assert.equal(limited.headers.get("Retry-After"), "600");
-    assert.equal(calls.length, 10);
+    assert.equal((await request(env, "/api/bonk/login", { username: "Demo", password: "test" })).status, 401);
+    assert.equal(calls.length, 11);
     env.LOGIN_RATE_LIMITER = { async limit() { return { success: false }; } };
     assert.equal((await request(env, "/api/bonk/login", { username: "other", password: "test" })).status, 429);
     env.API_RATE_LIMITER = { async limit() { return { success: false }; } };
     assert.equal((await request(env, "/api/account")).status, 429);
     delete env.API_RATE_LIMITER;
     assert.equal((await request(env, "/api/account")).status, 503);
-    assert.equal(calls.length, 10);
+    assert.equal(calls.length, 11);
 });
 
 test("sessions expire on the server, forged browser identities grant nothing, and account responses are never cached", async t => {

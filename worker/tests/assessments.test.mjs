@@ -173,3 +173,38 @@ test("writes require same origin, JSON and a bounded body", async t => {
     assert.equal((await request(env, "/api/admin/assessments", sample(), { cookie, headers: { "Content-Type": "text/plain" } })).status, 415);
     assert.equal((await request(env, "/api/admin/assessments", sample(), { cookie, headers: { "Content-Length": "8193" } })).status, 413);
 });
+
+test("admin account suggestions rank known names and keep verified IDs distinct", async t => {
+    const env = environment(t);
+    const admin = await signIn(t, env);
+    const regular = await signIn(t, env, 9001, "Aster");
+    await signIn(t, env, 9002, "Blaster");
+    await create(env, admin.cookie, sample("aster"));
+    await create(env, admin.cookie, sample("Asteroid"));
+    await create(env, admin.cookie, sample("Castaway"));
+
+    assert.equal((await request(env, "/api/admin/bonk-accounts?q=ast")).status, 401);
+    assert.equal((await request(env, "/api/admin/bonk-accounts?q=ast", undefined, { cookie: regular.cookie })).status, 403);
+    const response = await request(env, "/api/admin/bonk-accounts?q=ast&limit=6", undefined, { cookie: admin.cookie });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    const body = await response.json();
+    assert.deepEqual(body.accounts.map(account => account.username), ["Aster", "Asteroid", "Blaster", "Castaway"]);
+    assert.deepEqual(body.accounts[0], { username: "Aster", bonkId: "9001", source: "verified" });
+    assert.deepEqual(body.accounts[1], { username: "Asteroid", bonkId: null, source: "assessment" });
+    assert.equal(JSON.stringify(body).includes("private-test-password"), false);
+    assert.equal(JSON.stringify(body).includes("upstream-token"), false);
+    const limited = await (await request(env, "/api/admin/bonk-accounts?q=ast&limit=2", undefined, { cookie: admin.cookie })).json();
+    assert.equal(limited.accounts.length, 2);
+    assert.deepEqual((await (await request(env, "/api/admin/bonk-accounts?q=a", undefined, { cookie: admin.cookie })).json()).accounts, []);
+    assert.equal((await request(env, "/api/admin/bonk-accounts?q=ast&limit=9", undefined, { cookie: admin.cookie })).status, 400);
+    assert.equal((await request(env, `/api/admin/bonk-accounts?q=${"a".repeat(101)}`, undefined, { cookie: admin.cookie })).status, 400);
+});
+
+test("assessment names preserve significant Bonk username spaces", async t => {
+    const env = environment(t);
+    const { cookie } = await signIn(t, env);
+    const assessment = await create(env, cookie, sample("  Aster  "));
+    assert.equal(assessment.playerName, "  Aster  ");
+    assert.equal((await request(env, "/api/admin/assessments", sample("   "), { cookie })).status, 400);
+});

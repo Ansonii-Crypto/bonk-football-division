@@ -1,4 +1,4 @@
-import { handleAssessmentRequest } from "./assessments.js";
+import { handleAssessmentRequest, searchKnownBonkAccounts } from "./assessments.js";
 
 const SESSION_COOKIE = "__Host-bfd_session";
 const SESSION_SECONDS = 24 * 60 * 60;
@@ -165,7 +165,7 @@ async function login(request, env) {
         return json({ error: "Enter your Bonk username and password." }, 400);
     }
     const timestamp = Date.now();
-    const identityHash = await digest(body.username.trim().toLowerCase());
+    const identityHash = await digest(body.username.toLowerCase());
     const attempt = await env.DB.prepare(`
         INSERT INTO bonk_login_attempts(identity_hash, window, attempts) VALUES (?, ?, 1)
         ON CONFLICT(identity_hash) DO UPDATE SET window = excluded.window,
@@ -176,7 +176,7 @@ async function login(request, env) {
     if (attempt.attempts > 10) {
         return json({ error: "Too many sign-in attempts. Try again in ten minutes." }, 429, { "Retry-After": "600" });
     }
-    const verified = await authenticateWithBonk(body.username.trim(), body.password);
+    const verified = await authenticateWithBonk(body.username, body.password);
     body.password = "";
     if (verified.error) {
         return json({ error: verified.error }, verified.status);
@@ -233,7 +233,7 @@ async function api(request, env, url) {
     }
     const assessmentCollection = ["/api/assessments", "/api/admin/assessments"].includes(url.pathname);
     const assessmentItem = /^\/api\/(?:admin\/)?assessments\/[1-9][0-9]*$/.test(url.pathname);
-    const expectedMethod = url.pathname === "/api/account" || url.pathname === "/api/assessments" ? "GET"
+    const expectedMethod = ["/api/account", "/api/assessments", "/api/admin/bonk-accounts"].includes(url.pathname) ? "GET"
         : ["/api/bonk/login", "/api/bonk/logout"].includes(url.pathname) ? "POST"
         : url.pathname === "/api/admin/assessments" ? "GET, POST"
         : assessmentItem && url.pathname.startsWith("/api/admin/") ? "GET, PUT"
@@ -265,6 +265,16 @@ async function api(request, env, url) {
     if (url.pathname === "/api/bonk/logout") {
         return logout(request, env);
     }
+    if (url.pathname === "/api/admin/bonk-accounts") {
+        const account = await getAccount(request, env);
+        if (!account) {
+            return json({ error: "Sign in to search known Bonk accounts." }, 401);
+        }
+        if (!account.isAdmin) {
+            return json({ error: "Administrator access is required." }, 403);
+        }
+        return searchKnownBonkAccounts(env, url, json);
+    }
     if (assessmentCollection || assessmentItem) {
         const account = url.pathname.startsWith("/api/admin/") ? await getAccount(request, env) : null;
         return handleAssessmentRequest(request, env, url, account, readJson, json, positiveBonkId);
@@ -282,9 +292,11 @@ export default {
             return await api(request, env, url);
         } catch {
             // Never include exception text, request bodies, or provider data in responses/logs.
-            return json({ error: url.pathname.startsWith("/api/assessments") || url.pathname.startsWith("/api/admin/assessments")
-                ? "Assessments are temporarily unavailable. Please try again shortly."
-                : "Account sign-in is temporarily unavailable. Please try again shortly." }, 503);
+            return json({ error: url.pathname === "/api/admin/bonk-accounts"
+                ? "Known Bonk accounts are temporarily unavailable. Please try again shortly."
+                : url.pathname.startsWith("/api/assessments") || url.pathname.startsWith("/api/admin/assessments")
+                    ? "Assessments are temporarily unavailable. Please try again shortly."
+                    : "Account sign-in is temporarily unavailable. Please try again shortly." }, 503);
         }
     },
     async scheduled(_controller, env) {

@@ -45,7 +45,7 @@ async function navigate(window, hash) {
     await changed;
 }
 
-test("sign-in preserves password characters and replaces Account with the verified identity", async t => {
+test("sign-in preserves username and password characters and replaces Account with the verified identity", async t => {
     const calls = [];
     let resolveLogin;
     const window = await page(t, async (path, options) => {
@@ -61,7 +61,7 @@ test("sign-in preserves password characters and replaces Account with the verifi
     form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
     assert.equal(calls.filter(call => call.path === "/api/bonk/login").length, 1);
     const login = calls.at(-1);
-    assert.deepEqual(JSON.parse(login.options.body), { username: "typed-user", password: rawPassword });
+    assert.deepEqual(JSON.parse(login.options.body), { username: "  typed-user  ", password: rawPassword });
     assert.equal(login.options.credentials, "same-origin");
     assert.equal(login.options.redirect, "error");
     assert.equal(form.querySelector("fieldset").disabled, true);
