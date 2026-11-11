@@ -115,7 +115,46 @@
         }
     });
 
-    const players = [];
+    let players = [];
+
+    function validAssessment(row) {
+        return row && (typeof row.id === "string" || Number.isSafeInteger(row.id))
+            && typeof row.name === "string" && row.name.length > 0
+            && typeof row.date === "string" && Array.isArray(row.values) && row.values.length === 6
+            && row.values.every(value => Number.isInteger(value) && value >= 0 && value <= 300)
+            && Number.isInteger(row.total) && row.total >= 0 && row.total <= 1800
+            && Object.hasOwn(tierColors, row.tier);
+    }
+
+    function assessmentFromApi(row) {
+        return {
+            id: String(row.id),
+            name: row.name,
+            date: row.date,
+            className: typeof row.className === "string" ? row.className : "",
+            values: row.values,
+            total: row.total,
+            tier: row.tier,
+            notes: typeof row.notes === "string" ? row.notes : "",
+            assessorName: typeof row.assessorName === "string" ? row.assessorName : ""
+        };
+    }
+
+    async function fetchPublicAssessment(path, signal) {
+        const response = await fetch(path, {
+            headers: { Accept: "application/json" },
+            credentials: "omit",
+            cache: "no-store",
+            redirect: "error",
+            signal
+        });
+        if (!response.ok) {
+            const error = new Error(response.status === 404 ? "Assessment not found." : "Unable to load assessments. Please try again.");
+            error.status = response.status;
+            throw error;
+        }
+        return response.json();
+    }
 
     function element(tagName, className, text) {
         const node = document.createElement(tagName);
@@ -140,11 +179,6 @@
         }
 
         return { label, control };
-    }
-
-    function playerInitial(name) {
-        const first = String(name || "").trim().charAt(0).toUpperCase();
-        return /^[A-Z]$/.test(first) ? first : "#";
     }
 
     function assessmentHeading(player, headingTag = "h3") {
@@ -259,14 +293,47 @@
     }
 
     window.getAssessmentProfile = function getAssessmentProfile(id) {
-        const player = players.find(player => player.id === id);
-        if (!player) {
+        if (!id) {
             return null;
         }
+        const known = players.find(player => player.id === id);
         return {
-            title: player.name,
+            title: known?.name || "Assessment",
             description: "Player attribute scores and assessment notes.",
-            render: () => assessmentProfile(player)
+            render() {
+                const loading = element("section", "page-content assessments-content assessment-profile");
+                loading.setAttribute("aria-label", "Player assessment");
+                const status = element("p", "empty-state", "Loading assessment…");
+                status.setAttribute("role", "status");
+                loading.append(status);
+                const controller = new AbortController();
+                const onLeave = () => controller.abort();
+                window.addEventListener("hashchange", onLeave, { once: true });
+                void Promise.resolve().then(async () => {
+                    const data = await fetchPublicAssessment(`/api/assessments/${encodeURIComponent(id)}`, controller.signal);
+                    if (!validAssessment(data?.assessment)) {
+                        throw new Error("Assessment not found.");
+                    }
+                    if (!loading.isConnected || controller.signal.aborted) {
+                        return;
+                    }
+                    const player = assessmentFromApi(data.assessment);
+                    const profile = assessmentProfile(player);
+                    loading.replaceWith(profile);
+                    document.querySelector("#app .page-title").textContent = player.name;
+                    document.title = `${player.name} | Bonk Football Division`;
+                }).catch(error => {
+                    if (!loading.isConnected || controller.signal.aborted) {
+                        return;
+                    }
+                    status.textContent = error.status === 404 || error.message === "Assessment not found."
+                        ? "Assessment not found." : "Unable to load this assessment. Please try again.";
+                    const back = element("a", "assessment-back", "Back to assessments");
+                    back.href = "#assessments";
+                    loading.append(back);
+                }).finally(() => window.removeEventListener("hashchange", onLeave));
+                return loading;
+            }
         };
     };
 
@@ -320,10 +387,10 @@
         count.tabIndex = -1;
         const grid = element("div", "content-grid");
         grid.id = "assessment-results";
-        const populatedTiers = new Set(players.map(player => player.tier));
-        const populatedInitials = new Set(players.map(player => playerInitial(player.name)));
-        const availableTiers = Object.keys(tierColors).filter(value => populatedTiers.has(value) || browseState.tiers.has(value));
-        const availableInitials = [...new Set([...populatedInitials, ...browseState.initials])].sort();
+        const populatedTiers = new Set();
+        const populatedInitials = new Set();
+        const availableTiers = Object.keys(tierColors);
+        const availableInitials = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
         function createIndex(type, values, selection, populated) {
             const index = element("nav", `assessment-index assessment-${type}-index`);
             const isTier = type === "tier";
@@ -402,9 +469,11 @@
             directory
         );
 
-        let results = [];
         let viewRevision = 0;
         let copyAttempt = 0;
+        let loadVersion = 0;
+        let loadController = null;
+        let searchTimer = 0;
 
         function currentPosition() {
             return { left: window.scrollX, top: window.scrollY, indexes: indexes.scrollTop };
@@ -429,92 +498,135 @@
         });
         indexes.addEventListener("scroll", rememberScroll, { passive: true });
 
-        function updateResults() {
-            browseState.query = search.value.slice(0, 200);
-            browseState.sort = sort.control.value;
-            const query = browseState.query.trim().toLowerCase();
-            results = players.filter(player => {
-                const matchesSearch = `${player.name} ${player.className}`.toLowerCase().includes(query);
-                const matchesTier = browseState.tiers.size === 0 || browseState.tiers.has(player.tier);
-                const matchesInitial = browseState.initials.size === 0 || browseState.initials.has(playerInitial(player.name));
-                return matchesSearch && matchesTier && matchesInitial;
+        async function loadResults(version) {
+            if (version !== loadVersion || !section.isConnected) {
+                return;
+            }
+            const controller = new AbortController();
+            loadController = controller;
+            const parameters = new URLSearchParams({
+                page: String(browseState.page),
+                limit: String(assessmentsPerPage),
+                sort: browseState.sort
             });
-            const alphabetical = (left, right) => left.name.localeCompare(right.name, "en");
-            results.sort((left, right) => {
-                if (sort.control.value === "alphabetical") {
-                    return alphabetical(left, right);
+            if (browseState.query.trim()) {
+                parameters.set("q", browseState.query.trim());
+            }
+            if (browseState.tiers.size) {
+                parameters.set("tiers", availableTiers.filter(value => browseState.tiers.has(value)).join(","));
+            }
+            if (browseState.initials.size) {
+                parameters.set("initials", availableInitials.filter(value => browseState.initials.has(value)).join(","));
+            }
+            const savedPosition = browseScroll.view === viewHash() ? browseScroll : currentPosition();
+            try {
+                const data = await fetchPublicAssessment(`/api/assessments?${parameters}`, controller.signal);
+                if (version !== loadVersion || !section.isConnected || controller.signal.aborted) {
+                    return;
                 }
-                if (sort.control.value === "newest") {
-                    return right.date.localeCompare(left.date) || alphabetical(left, right);
+                if (!data || !Array.isArray(data.assessments) || data.assessments.length > assessmentsPerPage
+                    || data.assessments.some(row => !validAssessment(row))
+                    || !Number.isSafeInteger(data.total) || data.total < 0
+                    || !Number.isSafeInteger(data.page) || data.page < 1
+                    || !Number.isSafeInteger(data.pages) || data.pages < 1
+                    || !Array.isArray(data.availableTiers) || !Array.isArray(data.availableInitials)) {
+                    throw new Error("Invalid assessment response.");
                 }
-                const difference = sort.control.value === "ascending"
-                    ? left.total - right.total : right.total - left.total;
-                return difference || alphabetical(left, right);
-            });
-            renderResults();
+                players = data.assessments.map(assessmentFromApi);
+                browseState.page = data.page;
+                populatedTiers.clear();
+                populatedInitials.clear();
+                for (const tier of data.availableTiers) {
+                    if (Object.hasOwn(tierColors, tier)) {
+                        populatedTiers.add(tier);
+                    }
+                }
+                for (const initial of data.availableInitials) {
+                    if (/^[A-Z#]$/.test(initial)) {
+                        populatedInitials.add(initial);
+                    }
+                }
+                tierIndex.update();
+                initialIndex.update();
+                const start = (data.page - 1) * assessmentsPerPage;
+                const end = start + players.length;
+                count.textContent = data.total
+                    ? `Showing ${start + 1}\u2013${end} of ${data.total} assessments`
+                    : "0 assessments";
+                grid.replaceChildren(...players.map(assessmentCard));
+                if (!players.length) {
+                    grid.append(element("p", "empty-state", browseState.query || browseState.tiers.size || browseState.initials.size
+                        ? "No assessments match. Try another search or use All to reset either index."
+                        : "No assessments have been published yet."));
+                }
+                pagination.hidden = data.pages <= 1;
+                previous.disabled = data.page <= 1;
+                next.disabled = data.page >= data.pages;
+                pageIndicator.textContent = `Page ${data.page} of ${data.pages}`;
+                saveView();
+                restorePosition(savedPosition);
+            } catch (error) {
+                if (version !== loadVersion || !section.isConnected || controller.signal.aborted) {
+                    return;
+                }
+                players = [];
+                count.textContent = "Assessments unavailable";
+                const message = element("p", "empty-state", "Unable to load assessments. Please try again.");
+                const retry = element("button", "pagination-button", "Try again");
+                retry.type = "button";
+                retry.addEventListener("click", () => queueResults());
+                grid.replaceChildren(message, retry);
+                pagination.hidden = true;
+            } finally {
+                if (loadController === controller) {
+                    loadController = null;
+                    grid.removeAttribute("aria-busy");
+                }
+            }
         }
 
-        function renderResults() {
-            const connected = section.isConnected;
-            const position = connected ? currentPosition() : null;
+        function queueResults(delay = 0) {
+            window.clearTimeout(searchTimer);
+            loadController?.abort();
+            const version = ++loadVersion;
+            viewRevision += 1;
+            browseState.query = search.value.slice(0, 200);
+            browseState.sort = sort.control.value;
+            saveView();
             tierIndex.update();
             initialIndex.update();
-            viewRevision += 1;
             copyView.disabled = false;
             shareStatus.textContent = "";
             shareFallback.hidden = true;
-
-            const pageCount = Math.max(1, Math.ceil(results.length / assessmentsPerPage));
-            browseState.page = Math.max(1, Math.min(browseState.page, pageCount));
-            const start = (browseState.page - 1) * assessmentsPerPage;
-            const end = Math.min(start + assessmentsPerPage, results.length);
-            const totalLabel = results.length === players.length ? "" : ` (${players.length} total)`;
-            count.textContent = players.length === 0 ? "0 assessments" : results.length
-                ? `Showing ${start + 1}\u2013${end} of ${results.length} assessments${totalLabel}`
-                : `No matching assessments (${players.length} total)`;
-
-            // Replace the previous page so rendered cards never accumulate as people browse.
-            grid.replaceChildren(...results.slice(start, end).map(assessmentCard));
-            if (!results.length) {
-                grid.append(element("p", "empty-state", players.length === 0
-                    ? "No assessments have been published yet."
-                    : "No assessments match. Try another search or use All to reset either index."));
+            count.textContent = "Loading assessments…";
+            grid.setAttribute("aria-busy", "true");
+            previous.disabled = true;
+            next.disabled = true;
+            if (!grid.childElementCount) {
+                grid.append(element("p", "empty-state", "Loading assessments…"));
             }
-            pagination.hidden = pageCount <= 1;
-            previous.disabled = browseState.page === 1;
-            next.disabled = browseState.page === pageCount;
-            pageIndicator.textContent = `Page ${browseState.page} of ${pageCount}`;
-            saveView();
-
-            if (connected) {
-                restorePosition(position);
+            if (delay) {
+                searchTimer = window.setTimeout(() => void loadResults(version), delay);
             } else {
-                const view = viewHash();
-                const saved = browseScroll.view === view ? browseScroll : { left: 0, top: 0, indexes: 0 };
-                const revision = viewRevision;
-                window.requestAnimationFrame(() => {
-                    if (section.isConnected && revision === viewRevision) {
-                        restorePosition(saved);
-                    }
-                });
+                void Promise.resolve().then(() => loadResults(version));
             }
         }
 
-        function resetResults() {
+        function resetResults(delay = 0) {
             browseState.page = 1;
-            updateResults();
+            queueResults(delay);
         }
 
         function changePage(offset) {
             browseState.page += offset;
-            renderResults();
+            queueResults();
             count.focus({ preventScroll: true });
         }
 
         previous.addEventListener("click", () => changePage(-1));
         next.addEventListener("click", () => changePage(1));
-        search.addEventListener("input", resetResults);
-        sort.control.addEventListener("change", resetResults);
+        search.addEventListener("input", () => resetResults(180));
+        sort.control.addEventListener("change", () => resetResults());
         copyView.addEventListener("click", async () => {
             const revision = viewRevision;
             const attempt = ++copyAttempt;
@@ -553,7 +665,7 @@
                 }
             }
         });
-        updateResults();
+        queueResults();
         return section;
     };
 })();

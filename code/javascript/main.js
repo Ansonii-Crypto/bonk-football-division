@@ -34,6 +34,11 @@ const pages = {
         title: "Your profile",
         description: "Your Bonk identity on Bonk Football Division.",
         render: () => window.BonkAccount.renderProfilePage()
+    },
+    admin: {
+        title: "Management",
+        description: "Review and manage football assessments.",
+        render: () => window.BonkAdmin.renderPage()
     }
 };
 
@@ -68,7 +73,7 @@ function createNavigation() {
     const list = header.querySelector(".navigation-links");
 
     for (const [id, page] of Object.entries(pages)) {
-        if (id === "profile") {
+        if (id === "profile" || id === "admin") {
             continue;
         }
         const item = document.createElement("li");
@@ -252,7 +257,7 @@ function renderPage() {
     }
 
     header.querySelectorAll("[data-page]").forEach(link => {
-        if (link.dataset.page === pageId || pageId === "profile" && link.classList.contains("account-menu-trigger")) {
+        if (link.dataset.page === pageId || ["profile", "admin"].includes(pageId) && link.classList.contains("account-menu-trigger")) {
             link.setAttribute("aria-current", "page");
         } else {
             link.removeAttribute("aria-current");
@@ -269,7 +274,7 @@ let loginReturnHash = null;
 
 function returnableHash(hash) {
     const route = hash.slice(1).split("?", 1)[0];
-    return ["home", "assessments", "players", "tiers", "classes", "divisions", "profile"].includes(route)
+    return ["home", "assessments", "players", "tiers", "classes", "divisions", "profile", "admin"].includes(route)
         || route.startsWith("assessments/");
 }
 
@@ -284,7 +289,7 @@ window.addEventListener("bonk-login-success", () => {
 });
 
 window.addEventListener("bonk-account-change", () => {
-    if (["account", "profile"].includes(app.dataset.page)) {
+    if (["account", "profile", "admin"].includes(app.dataset.page)) {
         renderPage();
     }
 });
@@ -312,7 +317,7 @@ window.addEventListener("hashchange", event => {
     }
     closeNavigation();
     renderPage();
-    if (["account", "profile"].includes(app.dataset.page)) {
+    if (["account", "profile", "admin"].includes(app.dataset.page)) {
         window.BonkAccount.refresh();
     }
     app.focus({ preventScroll: true });

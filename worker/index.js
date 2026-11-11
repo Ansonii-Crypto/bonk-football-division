@@ -1,9 +1,12 @@
+import { handleAssessmentRequest } from "./assessments.js";
+
 const SESSION_COOKIE = "__Host-bfd_session";
 const SESSION_SECONDS = 24 * 60 * 60;
 const MAX_REQUEST_BYTES = 8192;
 const MAX_PROVIDER_BYTES = 512000;
 const PROVIDER_URL = "https://bonk2.io/scripts/login_legacy.php";
 const UNAVAILABLE = "Bonk sign-in is temporarily unavailable. Please try again shortly.";
+const PRIMARY_ADMIN_BONK_ID = "3177088";
 
 function json(data, status = 200, extraHeaders = {}) {
     return new Response(JSON.stringify(data), {
@@ -151,7 +154,8 @@ async function getAccount(request, env) {
         FROM user_sessions s JOIN bonk_users u ON u.bonk_id = s.bonk_id
         WHERE s.token_hash = ? AND s.expires_at > ?
     `).bind(await digest(token), Date.now()).first();
-    return row ? { bonkId: row.bonk_id, username: row.username, avatarCode: row.avatar_code } : null;
+    return row ? { bonkId: row.bonk_id, username: row.username, avatarCode: row.avatar_code,
+        isAdmin: row.bonk_id === PRIMARY_ADMIN_BONK_ID } : null;
 }
 
 async function login(request, env) {
@@ -178,6 +182,7 @@ async function login(request, env) {
         return json({ error: verified.error }, verified.status);
     }
     const { account } = verified;
+    account.isAdmin = account.bonkId === PRIMARY_ADMIN_BONK_ID;
     const token = randomToken();
     const previous = sessionToken(request);
     const statements = [
@@ -226,15 +231,20 @@ async function api(request, env, url) {
     if (!(await env.API_RATE_LIMITER.limit({ key: `api:${ip}` })).success) {
         return json({ error: "Too many requests. Please wait a moment and try again." }, 429, { "Retry-After": "60" });
     }
-    const expectedMethod = url.pathname === "/api/account" ? "GET"
-        : ["/api/bonk/login", "/api/bonk/logout"].includes(url.pathname) ? "POST" : null;
+    const assessmentCollection = ["/api/assessments", "/api/admin/assessments"].includes(url.pathname);
+    const assessmentItem = /^\/api\/(?:admin\/)?assessments\/[1-9][0-9]*$/.test(url.pathname);
+    const expectedMethod = url.pathname === "/api/account" || url.pathname === "/api/assessments" ? "GET"
+        : ["/api/bonk/login", "/api/bonk/logout"].includes(url.pathname) ? "POST"
+        : url.pathname === "/api/admin/assessments" ? "GET, POST"
+        : assessmentItem && url.pathname.startsWith("/api/admin/") ? "GET, PUT"
+        : assessmentItem ? "GET" : null;
     if (!expectedMethod) {
         return json({ error: "Not found." }, 404);
     }
-    if (request.method !== expectedMethod) {
+    if (!expectedMethod.split(", ").includes(request.method)) {
         return json({ error: "Method not allowed." }, 405, { Allow: expectedMethod });
     }
-    if (request.method === "POST") {
+    if (["POST", "PUT"].includes(request.method)) {
         if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get("Content-Type") || "")) {
             return json({ error: "Send a JSON request." }, 415);
         }
@@ -252,7 +262,14 @@ async function api(request, env, url) {
         }
         return login(request, env);
     }
-    return logout(request, env);
+    if (url.pathname === "/api/bonk/logout") {
+        return logout(request, env);
+    }
+    if (assessmentCollection || assessmentItem) {
+        const account = url.pathname.startsWith("/api/admin/") ? await getAccount(request, env) : null;
+        return handleAssessmentRequest(request, env, url, account, readJson, json, positiveBonkId);
+    }
+    return json({ error: "Not found." }, 404);
 }
 
 export default {
@@ -265,7 +282,9 @@ export default {
             return await api(request, env, url);
         } catch {
             // Never include exception text, request bodies, or provider data in responses/logs.
-            return json({ error: "Account sign-in is temporarily unavailable. Please try again shortly." }, 503);
+            return json({ error: url.pathname.startsWith("/api/assessments") || url.pathname.startsWith("/api/admin/assessments")
+                ? "Assessments are temporarily unavailable. Please try again shortly."
+                : "Account sign-in is temporarily unavailable. Please try again shortly." }, 503);
         }
     },
     async scheduled(_controller, env) {

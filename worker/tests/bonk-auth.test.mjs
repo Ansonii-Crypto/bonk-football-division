@@ -97,7 +97,7 @@ test("verified provider identity creates a hashed HttpOnly session, without trus
     const env = environment(t);
     const calls = provider(t);
     const login = await signIn(env, { bonkId: "1", username: "typed-name", role: "admin", token: "browser-forgery" });
-    assert.deepEqual(login.body, { account: { bonkId: "3177088", username: "Verified", avatarCode: null } });
+    assert.deepEqual(login.body, { account: { bonkId: "3177088", username: "Verified", avatarCode: null, isAdmin: true } });
     assert.equal(calls.length, 1);
     assert.equal(login.response.headers.get("Cache-Control"), "no-store");
     const cookie = login.response.headers.get("Set-Cookie");

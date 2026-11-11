@@ -181,11 +181,15 @@
 }
 
 .account-overview .account-identity {
-    margin-bottom: 0.3rem;
+    margin-bottom: 0;
+}
+
+.account-identity-text {
+    min-width: 0;
 }
 
 .account-overview .account-id-line {
-    margin-left: 4.5rem;
+    margin-top: 0.35rem;
 }
 
 .account-id-line {
@@ -542,10 +546,6 @@
 }
 
 @media (max-width: 30rem) {
-    .account-overview .account-id-line {
-        margin-left: 0;
-    }
-
     .account-profile-details {
         grid-template-columns: 1fr;
     }

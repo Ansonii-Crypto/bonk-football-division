@@ -36,7 +36,8 @@
         return account && typeof account.username === "string" && account.username.length > 0
             && account.username.length <= 100 && typeof account.bonkId === "string"
             && /^[1-9]\d{0,15}$/.test(account.bonkId)
-            && Number.isSafeInteger(Number(account.bonkId));
+            && Number.isSafeInteger(Number(account.bonkId))
+            && (account.isAdmin === undefined || typeof account.isAdmin === "boolean");
     }
 
     function notify() {
@@ -183,7 +184,7 @@
         if (!navigationItem) {
             return;
         }
-        const currentPage = ["account", "profile"].includes(document.querySelector("#app")?.dataset.page);
+        const currentPage = ["account", "profile", "admin"].includes(document.querySelector("#app")?.dataset.page);
         if (!state.account) {
             const link = element("a", "", "Account");
             link.href = "#account";
@@ -215,6 +216,12 @@
         profileLink.href = "#profile";
         profileLink.dataset.page = "profile";
         profileLink.addEventListener("click", () => closeMenu());
+        const adminLink = state.account.isAdmin === true ? element("a", "", "Admin center") : null;
+        if (adminLink) {
+            adminLink.href = "#admin";
+            adminLink.dataset.page = "admin";
+            adminLink.addEventListener("click", () => closeMenu());
+        }
         const signOut = element("button", "account-logout", "Log out");
         signOut.type = "button";
         signOut.disabled = state.pending;
@@ -224,7 +231,11 @@
             status.textContent = "Signing out…";
         }
         signOut.addEventListener("click", () => logout(signOut, status));
-        options.append(accountLink, profileLink, signOut, status);
+        options.append(accountLink, profileLink);
+        if (adminLink) {
+            options.append(adminLink);
+        }
+        options.append(signOut, status);
         menu.append(summary, options);
         menu.addEventListener("keydown", event => {
             if (event.key === "Escape" && menu.open) {
@@ -238,7 +249,7 @@
             }
             event.preventDefault();
             menu.open = true;
-            const actions = [accountLink, profileLink, signOut];
+            const actions = [accountLink, profileLink, ...(adminLink ? [adminLink] : []), signOut];
             const index = actions.indexOf(document.activeElement);
             const next = event.key === "Home" ? 0 : event.key === "End" ? actions.length - 1
                 : index < 0 ? (event.key === "ArrowUp" ? actions.length - 1 : 0)
@@ -291,12 +302,12 @@
             const identity = element("div", "account-identity");
             const name = element("h2", "account-name", state.account.username);
             name.tabIndex = -1;
-            identity.append(avatar(state.account, true), name);
+            const identityText = element("div", "account-identity-text");
             const idLine = element("div", "account-id-line");
-            const identifier = element("p", "account-id", `Bonk account ID: ${state.account.bonkId}`);
+            const identifier = element("p", "account-id", `Bonk player ID: ${state.account.bonkId}`);
             const copyId = element("button", "account-copy-id", "Copy ID");
             copyId.type = "button";
-            copyId.setAttribute("aria-label", "Copy Bonk account ID");
+            copyId.setAttribute("aria-label", "Copy Bonk player ID");
             const copyStatus = element("span", "account-copy-status");
             copyStatus.setAttribute("role", "status");
             copyId.addEventListener("click", async () => {
@@ -313,14 +324,16 @@
                     selectable.type = "text";
                     selectable.readOnly = true;
                     selectable.value = id;
-                    selectable.setAttribute("aria-label", "Bonk account ID to copy");
+                    selectable.setAttribute("aria-label", "Bonk player ID to copy");
                     copyStatus.append("Select the ID: ", selectable);
                     selectable.focus();
                     selectable.select();
                 }
             });
             idLine.append(identifier, copyId, copyStatus);
-            panel.append(kicker, identity, idLine);
+            identityText.append(name, idLine);
+            identity.append(avatar(state.account, true), identityText);
+            panel.append(kicker, identity);
 
             const cards = element("div", "account-dashboard-grid");
             const profile = element("section", "account-panel account-dashboard-card");
@@ -343,7 +356,18 @@
             signOut.disabled = state.pending;
             signOut.addEventListener("click", () => logout(signOut, status));
             sessionPanel.append(signOut, status);
-            cards.append(profile, sessionPanel);
+            cards.append(profile);
+            if (state.account.isAdmin === true) {
+                const management = element("section", "account-panel account-dashboard-card");
+                management.append(element("p", "account-card-kicker", "Administration"));
+                management.append(element("h2", "", "Management"));
+                management.append(element("p", "account-note", "View, create, and update football assessments."));
+                const manageLink = element("a", "account-button account-button--outline", "Open admin center");
+                manageLink.href = "#admin";
+                management.append(manageLink);
+                cards.append(management);
+            }
+            cards.append(sessionPanel);
             section.append(panel, cards);
             return section;
         }
@@ -496,6 +520,9 @@
         renderProfilePage,
         refresh,
         closeMenu,
+        session() {
+            return { checked: state.checked, account: state.account, unavailable: state.unavailable };
+        },
         mountNavigation(item) {
             navigationItem = item;
             updateNavigation();
