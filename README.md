@@ -14,15 +14,19 @@ code/
     css/pages.css             Page layouts
     css/account.css           Account form and navigation dropdown
     css/admin.css             Assessment management interface
+    css/division-view.css     Event pages, timelines and brackets
+    css/divisions.css         Division list and editor
     javascript/main.js        Navigation and routing
     javascript/assessments.js  Assessment browsing and profiles
     javascript/classes.js     Seven playstyle class guides
-    javascript/divisions.js   Championship partnerships
+    javascript/divisions.js   Division directory and live event editor
+    javascript/division-view.js Event preview and bracket calculation
     javascript/account.js     Bonk sign-in and account state
     javascript/admin.js       Administrator assessment tools
     javascript/build.mjs      Public-site build
 worker/index.js               Same-origin account and assessment API
 worker/assessments.js         Assessment validation and queries
+worker/divisions.js           Division drafts, publication and scoped roles
 worker/migrations/            D1 database migrations
 worker/tests/                 Worker API tests
 tests/                        Browser behavior tests
@@ -33,7 +37,7 @@ wrangler.jsonc                Cloudflare Worker configuration
 
 Assessments and Divisions start empty. Administrators can now add assessments; the seven defined playstyle classes are retained. Class videos are not available yet.
 
-The Divisions page invites tournament hosts to work with the division. A host request form and review process are planned; no contact form is live yet.
+The Divisions page invites tournament hosts to work with the division. A host request form and review process are planned; no contact form is live yet. The site administrator can create event drafts and delegate management to signed-in Bonk accounts.
 
 Bonk.io account sign-in is available through **Account**. Assessments are stored in this site's D1 database and appear publicly when created. No player records or competitions are fabricated, and the existing Bonk Critic database is not connected or imported.
 
@@ -99,6 +103,23 @@ Search, filters, sorting, and page are remembered in this browser. **Copy view l
 Assessments use normal page scrolling with matching top and bottom padding. On desktop, the left indexes remain visible and scroll separately when needed; on smaller screens, they become horizontal rows. Returning from a profile restores the page and index positions for the same view.
 
 The **Admin center** link appears only for the initial administrator. Its connected tabs provide a paged assessment list with search and sorting, a read-only detail view, an explicit edit action, and a form to create an assessment. Each of the six scores is validated as a whole number from 0 to 300; the Worker calculates total points and tier and rejects stale edits. Player comparison and badge management are not implemented yet.
+
+## Divisions and events
+
+Open **Divisions** to create a division as the site administrator or find events assigned to your account. Each event has its own `#divisions/ID` page inside the normal site navigation. New divisions start as private drafts; published events appear in the public list.
+
+The event editor uses the same renderer as the public page. Switch between **View** and **Edit**, select a section, and change its fields while the preview updates. **Save draft** stores changes privately; **Publish** promotes the saved draft. **Unpublish** withdraws the public copy while retaining the draft. Version checks prevent a stale editor from overwriting a newer save.
+
+| Role | Event content | Publication | Management roles |
+| --- | --- | --- | --- |
+| Site administrator | All divisions and sections | Publish and unpublish | Assign or remove any division role |
+| Director | All sections of assigned divisions | Publish and unpublish | Assign or remove organizers and editors |
+| Organizer | Event information, timeline, participation, teams, bracket, campaigns and referendums | Draft only | None |
+| Editor | Description, campaigns and referendums | Draft only | None |
+
+Roles are scoped to one division and checked by the Worker on every management request. Assign a role using the person's **Bonk player ID** after they have signed in to this site. A division role grants no assessment or site administrator privileges.
+
+The template includes a branched date timeline, participation settings from 1v1 to 4v4, rosters, and a single elimination bracket for up to 16 entrants. Byes advance automatically; entered scores advance the winner, while a tie waits for a result. Scores are tied to their participants so an earlier result change cannot silently reuse a later match's old score. Campaign and referendum sections currently display event information and choices; signup submissions and voting are not implemented.
 
 ## Code conventions
 

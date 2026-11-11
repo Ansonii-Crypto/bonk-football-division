@@ -1,4 +1,5 @@
 import { handleAssessmentRequest, searchKnownBonkAccounts } from "./assessments.js";
+import { divisionRequestMethods, handleDivisionRequest } from "./divisions.js";
 
 const SESSION_COOKIE = "__Host-bfd_session";
 const SESSION_SECONDS = 24 * 60 * 60;
@@ -74,8 +75,8 @@ async function readBoundedBody(body, maximum) {
     return new TextDecoder().decode(bytes);
 }
 
-async function readJson(request) {
-    const text = await readBoundedBody(request.body, MAX_REQUEST_BYTES);
+async function readJson(request, maximum = MAX_REQUEST_BYTES) {
+    const text = await readBoundedBody(request.body, maximum);
     if (text === null) {
         return null;
     }
@@ -233,11 +234,12 @@ async function api(request, env, url) {
     }
     const assessmentCollection = ["/api/assessments", "/api/admin/assessments"].includes(url.pathname);
     const assessmentItem = /^\/api\/(?:admin\/)?assessments\/[1-9][0-9]*$/.test(url.pathname);
-    const expectedMethod = ["/api/account", "/api/assessments", "/api/admin/bonk-accounts"].includes(url.pathname) ? "GET"
+    const divisionMethods = divisionRequestMethods(url.pathname);
+    const expectedMethod = divisionMethods || (["/api/account", "/api/assessments", "/api/admin/bonk-accounts"].includes(url.pathname) ? "GET"
         : ["/api/bonk/login", "/api/bonk/logout"].includes(url.pathname) ? "POST"
         : url.pathname === "/api/admin/assessments" ? "GET, POST"
         : assessmentItem && url.pathname.startsWith("/api/admin/") ? "GET, PUT"
-        : assessmentItem ? "GET" : null;
+        : assessmentItem ? "GET" : null);
     if (!expectedMethod) {
         return json({ error: "Not found." }, 404);
     }
@@ -249,7 +251,7 @@ async function api(request, env, url) {
             return json({ error: "Send a JSON request." }, 415);
         }
         const length = Number(request.headers.get("Content-Length"));
-        if (Number.isFinite(length) && length > MAX_REQUEST_BYTES) {
+        if (Number.isFinite(length) && length > (divisionMethods ? 65536 : MAX_REQUEST_BYTES)) {
             return json({ error: "That request is too large." }, 413);
         }
     }
@@ -264,6 +266,10 @@ async function api(request, env, url) {
     }
     if (url.pathname === "/api/bonk/logout") {
         return logout(request, env);
+    }
+    if (divisionMethods) {
+        const account = url.pathname.startsWith("/api/divisions") ? null : await getAccount(request, env);
+        return handleDivisionRequest(request, env, url, account, req => readJson(req, 65536), json, positiveBonkId);
     }
     if (url.pathname === "/api/admin/bonk-accounts") {
         const account = await getAccount(request, env);
@@ -292,7 +298,9 @@ export default {
             return await api(request, env, url);
         } catch {
             // Never include exception text, request bodies, or provider data in responses/logs.
-            return json({ error: url.pathname === "/api/admin/bonk-accounts"
+            return json({ error: divisionRequestMethods(url.pathname)
+                ? "Divisions are temporarily unavailable. Please try again shortly."
+                : url.pathname === "/api/admin/bonk-accounts"
                 ? "Known Bonk accounts are temporarily unavailable. Please try again shortly."
                 : url.pathname.startsWith("/api/assessments") || url.pathname.startsWith("/api/admin/assessments")
                     ? "Assessments are temporarily unavailable. Please try again shortly."

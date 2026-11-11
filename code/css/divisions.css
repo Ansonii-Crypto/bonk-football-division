@@ -1,0 +1,473 @@
+.divisions-directory {
+    display: grid;
+    gap: 3rem;
+}
+
+.page.page--division-detail {
+    padding-block: 2.5rem;
+}
+
+.division-host-invitation {
+    padding: clamp(1.4rem, 4vw, 2.2rem);
+    background: linear-gradient(120deg, #132b3a, #171e2b 65%, #2b232a);
+    border: 1px solid #405d70;
+    border-radius: 1rem;
+}
+
+.division-host-invitation h2,
+.division-directory-heading h2,
+.division-directory-events > h2 {
+    margin: 0 0 0.65rem;
+    font-size: 1.5rem;
+    letter-spacing: -0.025em;
+}
+
+.division-host-invitation > p:not(.division-eyebrow) {
+    max-width: 65ch;
+    color: var(--muted);
+}
+
+.division-eyebrow {
+    margin: 0 0 0.75rem;
+    color: #a8ddec;
+    font-size: 0.68rem;
+    font-weight: 750;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+.division-state {
+    display: inline-flex;
+    width: fit-content;
+    padding: 0.25rem 0.65rem;
+    color: #bfdeee;
+    background: rgb(120 217 255 / 8%);
+    border: 1px solid rgb(120 217 255 / 22%);
+    border-radius: 2rem;
+    font-size: 0.73rem;
+    font-weight: 650;
+    text-transform: capitalize;
+}
+
+.division-directory-heading,
+.division-card-footer,
+.division-editor-entry-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+}
+
+.division-directory-heading {
+    margin-bottom: 1.25rem;
+}
+
+.division-event-grid {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+}
+
+.division-event-card {
+    display: flex;
+    flex: 0 1 calc((100% - 2.5rem) / 3);
+    flex-direction: column;
+    min-width: min(100%, 17rem);
+    padding: 1.5rem;
+    color: var(--text);
+    background: #152333;
+    border: 1px solid #40596e;
+    border-radius: 0.9rem;
+    text-decoration: none;
+    transition: border-color 150ms, transform 150ms;
+}
+
+.division-event-card:hover {
+    border-color: #82b5ca;
+    transform: translateY(-3px);
+}
+
+.division-event-card h3 {
+    margin: 1.2rem 0 0.5rem;
+    font-size: 1.25rem;
+    overflow-wrap: anywhere;
+}
+
+.division-event-card > p {
+    flex: 1;
+    margin: 0 0 1.5rem;
+    color: var(--muted);
+    font-size: 0.88rem;
+}
+
+.division-card-footer {
+    padding-top: 1rem;
+    color: #a8c9da;
+    border-top: 1px solid var(--line);
+    font-size: 0.75rem;
+}
+
+.division-card-footer span:last-child {
+    color: #ffd1b6;
+}
+
+.division-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 2.6rem;
+    padding: 0.6rem 0.85rem;
+    color: #d6e9f6;
+    background: #23394c;
+    border: 1px solid #4b6b82;
+    border-radius: 0.5rem;
+    font: inherit;
+    font-size: 0.79rem;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.division-button:hover {
+    background: #314d62;
+    border-color: #82a8bf;
+}
+
+.division-button[aria-pressed="true"] {
+    color: #d4f1ff;
+    background: #2b536a;
+    border-color: #85c8e4;
+}
+
+.division-button--primary {
+    color: #0b1720;
+    background: #aae5fc;
+    border-color: #aae5fc;
+}
+
+.division-button--primary:hover {
+    color: #0b1720;
+    background: #d2f3ff;
+}
+
+.division-button--warm {
+    color: #ffddc6;
+    background: #4a332d;
+    border-color: #b47d61;
+}
+
+.division-button--danger {
+    min-height: 2rem;
+    padding: 0.35rem 0.6rem;
+    color: #ffc1b8;
+    background: rgb(222 86 74 / 8%);
+    border-color: rgb(245 142 125 / 28%);
+}
+
+.division-button--danger:hover {
+    background: rgb(222 86 74 / 19%);
+    border-color: #bb7065;
+}
+
+.division-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.division-button:focus-visible,
+.division-event-card:focus-visible,
+.division-back:focus-visible {
+    outline: 2px solid #d1eaf6;
+    outline-offset: 3px;
+}
+
+.division-field-label {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 0;
+    color: #c3d8e6;
+    font-size: 0.79rem;
+    font-weight: 650;
+}
+
+.division-field {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.7rem;
+    padding: 0.65rem 0.75rem;
+    color: var(--text);
+    background: #0d1926;
+    border: 1px solid #4a6377;
+    border-radius: 0.5rem;
+    outline: none;
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 400;
+}
+
+.division-field:focus {
+    border-color: #92c3d7;
+}
+
+textarea.division-field {
+    resize: vertical;
+    line-height: 1.6;
+}
+
+.division-create-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 0.8rem;
+    margin-top: 1.2rem;
+    padding: 1.2rem;
+    background: #152333;
+    border: 1px solid #40596e;
+    border-radius: 0.75rem;
+}
+
+.division-create-form[hidden] {
+    display: none;
+}
+
+.division-create-form .division-message {
+    grid-column: 1 / -1;
+}
+
+.division-directory-pagination {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.8rem;
+    margin-top: 1.5rem;
+}
+
+.division-empty {
+    width: 100%;
+    padding: 2rem;
+    color: var(--muted);
+    border: 1px dashed #40596e;
+    border-radius: 0.75rem;
+    text-align: center;
+}
+
+.division-muted,
+.division-editor-note {
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+.division-error {
+    color: #ffc4af;
+}
+
+.division-message {
+    margin: 0.3rem 0 0;
+    color: #abcbdc;
+    font-size: 0.77rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.division-message:empty {
+    display: none;
+}
+
+.division-back {
+    display: inline-flex;
+    margin-bottom: 1.5rem;
+    color: #c1e7f6;
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.division-back:hover {
+    text-decoration: underline;
+}
+
+.division-management-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.15rem;
+    background: #152638;
+    border: 1px solid #4f6c81;
+    border-radius: 0.75rem;
+}
+
+.division-management-identity strong {
+    color: #d0ecfb;
+    font-size: 0.85rem;
+}
+
+.division-management-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.division-workspace {
+    min-width: 0;
+}
+
+.division-workspace.is-editing {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    align-items: start;
+    gap: 1.3rem;
+}
+
+.division-live-preview {
+    min-width: 0;
+}
+
+.division-inspector {
+    position: sticky;
+    top: 6rem;
+    min-width: 0;
+    max-height: calc(100svh - 7rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 1.1rem;
+    background: #172a3c;
+    border: 1px solid #57778e;
+    border-radius: 0.8rem;
+}
+
+.division-inspector-navigation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 1.2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #3b5368;
+}
+
+.division-inspector-navigation .division-button {
+    min-height: 2.1rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.7rem;
+}
+
+.division-inspector-body {
+    display: grid;
+    gap: 1rem;
+}
+
+.division-inspector-body > h2 {
+    margin: 0;
+    color: #e1f1fc;
+    font-size: 1.15rem;
+    line-height: 1.4;
+}
+
+.division-inspector-body > h3 {
+    margin: 0.4rem 0 0;
+    font-size: 0.9rem;
+}
+
+.division-editor-entry {
+    display: grid;
+    gap: 0.8rem;
+    min-width: 0;
+    padding: 0.9rem;
+    background: #102030;
+    border: 1px solid #3a5267;
+    border-radius: 0.6rem;
+}
+
+.division-editor-entry > strong,
+.division-editor-entry-heading > strong {
+    color: #c6dfea;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+}
+
+.division-score-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.7rem;
+}
+
+.division-member-form,
+.division-member-list {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.division-member-form {
+    padding-top: 1rem;
+    border-top: 1px solid #3b5368;
+}
+
+.division-member-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #3b5368;
+}
+
+.division-member-row > div {
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.division-member-row strong {
+    font-size: 0.85rem;
+}
+
+@media (max-width: 65rem) {
+    .division-workspace.is-editing {
+        grid-template-columns: minmax(0, 1fr) 18rem;
+    }
+
+    .division-event-card {
+        flex-basis: calc((100% - 1.25rem) / 2);
+    }
+}
+
+@media (max-width: 48rem) {
+    .division-workspace.is-editing {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .division-inspector {
+        position: static;
+        order: -1;
+        width: 100%;
+        max-height: none;
+        overflow: visible;
+    }
+
+    .division-live-preview {
+        width: 100%;
+    }
+
+    .division-create-form {
+        grid-template-columns: 1fr;
+    }
+
+    .division-event-card {
+        flex-basis: 100%;
+    }
+
+    .division-management-actions {
+        width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .division-event-card {
+        transition: none;
+    }
+}

@@ -21,8 +21,8 @@ const pages = {
     divisions: {
         label: "Divisions",
         title: "Divisions",
-        description: "A future home for championship partners and community competitions.",
-        render: renderDivisionsPage
+        description: "Football events, tournament brackets, and the people bringing them together.",
+        render: () => window.BonkDivisions.renderList()
     },
     account: {
         label: "Account",
@@ -161,6 +161,15 @@ function renderPage() {
     const requestedPage = ["players", "tiers"].includes(requestedRoute) ? "assessments" : requestedRoute;
     let pageId = Object.hasOwn(pages, requestedPage) ? requestedPage : "home";
     let page = pages[pageId];
+    const divisionDetail = requestedRoute.startsWith("divisions/");
+
+    if (divisionDetail) {
+        pageId = "divisions";
+        page = {
+            title: "Division",
+            render: () => window.BonkDivisions.renderDivision(requestedRoute.slice("divisions/".length))
+        };
+    }
 
     if (requestedRoute.startsWith("assessments/")) {
         pageId = "assessments";
@@ -200,11 +209,12 @@ function renderPage() {
 
     const description = document.createElement("p");
     description.className = "page-description";
-    description.textContent = page.description;
+    description.textContent = page.description || "";
 
     introduction.append(eyebrow, heading, description);
     app.classList.toggle("page--home", pageId === "home");
     app.classList.toggle("page--assessment-browser", pageId === "assessments" && !requestedRoute.startsWith("assessments/"));
+    app.classList.toggle("page--division-detail", divisionDetail);
     app.dataset.page = pageId;
 
     if (pageId === "home") {
@@ -248,6 +258,8 @@ function renderPage() {
         `;
 
         app.replaceChildren(introduction, illustration);
+    } else if (divisionDetail) {
+        app.replaceChildren(page.render());
     } else {
         app.replaceChildren(introduction);
 
@@ -275,7 +287,7 @@ let loginReturnHash = null;
 function returnableHash(hash) {
     const route = hash.slice(1).split("?", 1)[0];
     return ["home", "assessments", "players", "tiers", "classes", "divisions", "profile", "admin"].includes(route)
-        || route.startsWith("assessments/");
+        || route.startsWith("assessments/") || route.startsWith("divisions/");
 }
 
 window.addEventListener("bonk-login-success", () => {
@@ -289,7 +301,7 @@ window.addEventListener("bonk-login-success", () => {
 });
 
 window.addEventListener("bonk-account-change", () => {
-    if (["account", "profile", "admin"].includes(app.dataset.page)) {
+    if (["account", "profile", "admin", "divisions"].includes(app.dataset.page)) {
         renderPage();
     }
 });
@@ -317,7 +329,7 @@ window.addEventListener("hashchange", event => {
     }
     closeNavigation();
     renderPage();
-    if (["account", "profile", "admin"].includes(app.dataset.page)) {
+    if (["account", "profile", "admin", "divisions"].includes(app.dataset.page)) {
         window.BonkAccount.refresh();
     }
     app.focus({ preventScroll: true });
