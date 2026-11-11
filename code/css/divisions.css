@@ -105,12 +105,12 @@
     border: 1px solid #40596e;
     border-radius: 0.9rem;
     text-decoration: none;
-    transition: border-color 150ms, transform 150ms;
+    transition: border-color 150ms, box-shadow 150ms;
 }
 
 .division-event-card:hover {
     border-color: #82b5ca;
-    transform: translateY(-3px);
+    box-shadow: 0 0 0 1px rgb(120 217 255 / 12%);
 }
 
 .division-event-card h3 {
