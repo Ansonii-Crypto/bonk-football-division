@@ -316,61 +316,263 @@ textarea.division-field {
     text-decoration: underline;
 }
 
+.division-event-container--managed {
+    display: grid;
+    grid-template-columns: 16.5rem minmax(0, 1fr);
+    align-items: start;
+    gap: 1.4rem;
+}
+
 .division-management-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
+    display: grid;
     gap: 1rem;
-    margin-bottom: 1.5rem;
-    padding: 1rem 1.15rem;
-    background: #152638;
+    min-width: 0;
+    margin: 0;
+    padding: 1.1rem;
+    background: linear-gradient(150deg, #1a3043, #132333 70%);
     border: 1px solid #4f6c81;
-    border-radius: 0.75rem;
+    border-radius: 0.85rem;
+    box-shadow: 0 12px 30px rgb(0 0 0 / 12%);
+}
+
+.division-management-tools {
+    position: sticky;
+    top: 6rem;
+    align-self: start;
+    max-height: calc(100svh - 7rem);
+    max-height: calc(100dvh - 7rem);
+    overflow-y: auto;
+    overscroll-behavior: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #567286 transparent;
+}
+
+.division-management-identity {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #3b5266;
 }
 
 .division-management-identity strong {
     color: #d0ecfb;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
 }
 
 .division-management-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
+    display: grid;
+    gap: 0.9rem;
+    min-width: 0;
+}
+
+.division-management-actions .division-button {
+    width: 100%;
+    white-space: normal;
+}
+
+.division-mode-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem;
+    padding: 0.25rem;
+    background: #0c1b29;
+    border: 1px solid #38546a;
+    border-radius: 0.65rem;
+}
+
+.division-mode-switch .division-button {
+    min-height: 2.25rem;
+    padding: 0.45rem 0.6rem;
+    color: #a9c3d5;
+    background: transparent;
+    border-color: transparent;
+    border-radius: 0.4rem;
+}
+
+.division-mode-switch .division-button[aria-pressed="true"] {
+    color: #d8f1ff;
+    background: #2a5067;
+    border-color: #6b9eb7;
+}
+
+.division-mode-switch .division-button:hover:not(:disabled) {
+    color: #e2f3fc;
+    background: #223e52;
+}
+
+.division-page-actions,
+.division-settings-actions {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.division-settings-actions {
+    padding-top: 0.9rem;
+    border-top: 1px solid #3b5266;
+}
+
+.division-settings-actions .division-button {
+    justify-content: flex-start;
+    text-align: left;
+}
+
+.division-management-actions > .division-button:last-child {
+    color: #aec6d6;
+    background: transparent;
+    border-color: #3b5368;
 }
 
 .division-workspace {
     min-width: 0;
 }
 
-.division-workspace.is-editing {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 21rem;
-    align-items: start;
-    gap: 1.3rem;
-}
-
 .division-live-preview {
     min-width: 0;
 }
 
-.division-inspector {
-    position: sticky;
-    top: 6rem;
+.division-tool-panel {
+    display: grid;
+    gap: 0.9rem;
     min-width: 0;
-    max-height: calc(100svh - 7rem);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 1.1rem;
-    background: #172a3c;
-    border: 1px solid #57778e;
-    border-radius: 0.8rem;
+    padding-top: 1rem;
+    border-top: 1px solid #3b5266;
+}
+
+.division-tool-panel > h2,
+.division-tool-panel .division-inline-heading h2 {
+    margin: 0;
+    color: #d7ecf8;
+    font-size: 1.05rem;
+}
+
+.division-inline-editor {
+    display: grid;
+    gap: 1.3rem;
+    min-width: 0;
+    margin: 0;
+}
+
+.division-inline-heading {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    padding-bottom: 1.1rem;
+    border-bottom: 1px solid #3e5b71;
+}
+
+.division-inline-heading h2,
+.division-inline-editor > h2 {
+    margin: 0;
+    color: #e1f2fc;
+    font-size: clamp(1.2rem, 2vw, 1.55rem);
+    line-height: 1.35;
+    letter-spacing: -0.025em;
+}
+
+.division-inline-heading p {
+    margin: 0.35rem 0 0;
+    color: #a9c2d3;
+    font-size: 0.82rem;
+}
+
+.division-inline-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.1rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.division-inline-fields > :is(.division-editor-entry, .division-editor-note, .division-message, .division-member-form, .division-member-list, h3, p, button),
+.division-inline-fields > .division-field-label:has(textarea) {
+    grid-column: 1 / -1;
+}
+
+.division-inline-fields > h3 {
+    margin: 0.4rem 0 0;
+    font-size: 1rem;
+}
+
+.division-inline-fields:disabled {
+    opacity: 0.7;
+}
+
+.division-inline-editor .division-field {
+    min-height: 3rem;
+    background: #0b1a28;
+    border-color: #526d83;
+}
+
+.division-inline-editor .division-field-label {
+    color: #cfe1ed;
+    font-size: 0.83rem;
+}
+
+.division-inline-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid #3e5b71;
+}
+
+.division-inline-actions .division-button {
+    min-width: 6rem;
+}
+
+.division-inline-status {
+    margin: 0;
+    color: #b7d5e5;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+}
+
+.division-inline-status:empty {
+    display: none;
+}
+
+.division-event-section:has(> .division-inline-editor) {
+    background: linear-gradient(145deg, #193346, #152b3d 70%);
+    border-color: #79b2cf;
+    box-shadow: 0 0 0 1px rgb(120 217 255 / 10%);
+}
+
+.division-tool-panel .division-inline-fields {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.division-tool-panel .division-inline-actions .division-button {
+    flex: 1;
+    min-width: 0;
+}
+
+.division-add-panel {
+    display: grid;
+    gap: 1.1rem;
+    min-width: 0;
+    padding: clamp(1.25rem, 3vw, 2rem);
+    background: #152b3c;
+    border: 1px solid #60859e;
+    border-radius: 1rem;
+}
+
+.division-add-panel > h2 {
+    margin: 0;
+    color: #e0f1fc;
+    font-size: 1.35rem;
 }
 
 .division-section-picker {
     display: grid;
     gap: 0.65rem;
+}
+
+.division-add-panel .division-section-picker {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
 }
 
 .division-section-choice {
@@ -392,23 +594,6 @@ textarea.division-field {
     font-size: 0.76rem;
     font-weight: 400;
     line-height: 1.5;
-}
-
-.division-inspector-body {
-    display: grid;
-    gap: 1rem;
-}
-
-.division-inspector-body > h2 {
-    margin: 0;
-    color: #e1f1fc;
-    font-size: 1.15rem;
-    line-height: 1.4;
-}
-
-.division-inspector-body > h3 {
-    margin: 0.4rem 0 0;
-    font-size: 0.9rem;
 }
 
 .division-editor-entry {
@@ -467,29 +652,41 @@ textarea.division-field {
 }
 
 @media (max-width: 65rem) {
-    .division-workspace.is-editing {
-        grid-template-columns: minmax(0, 1fr) 18rem;
-    }
-
     .division-event-card {
         flex-basis: calc((100% - 1.25rem) / 2);
     }
 }
 
-@media (max-width: 48rem) {
-    .division-workspace.is-editing {
-        display: flex;
-        flex-direction: column;
+@media (max-width: 56rem) {
+    .division-event-container--managed {
+        grid-template-columns: minmax(0, 1fr);
     }
 
-    .division-inspector {
+    .division-management-tools {
         position: static;
-        order: -1;
-        width: 100%;
         max-height: none;
         overflow: visible;
     }
 
+    .division-management-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+        gap: 0.7rem;
+    }
+
+    .division-mode-switch,
+    .division-management-actions > .division-button,
+    .division-tool-panel {
+        grid-column: 1 / -1;
+    }
+
+    .division-settings-actions {
+        padding-top: 0;
+        border-top: 0;
+    }
+}
+
+@media (max-width: 48rem) {
     .division-live-preview {
         width: 100%;
     }
@@ -502,8 +699,15 @@ textarea.division-field {
         flex-basis: 100%;
     }
 
-    .division-management-actions {
-        width: 100%;
+}
+
+@media (max-width: 36rem) {
+    .division-inline-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .division-inline-actions .division-button {
+        flex: 1;
     }
 }
 

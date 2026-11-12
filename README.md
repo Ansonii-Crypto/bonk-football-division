@@ -108,11 +108,13 @@ The **Admin center** link appears only for the initial administrator. Its connec
 
 Open **Divisions** to create a division as the site administrator or find events assigned to your account. Each event has its own `#divisions/ID` page inside the normal site navigation. New divisions start as private drafts; published events appear in the public list.
 
-The event editor uses the same renderer as the public page. Switch between **View** and **Edit**, select a section in the preview, and change its fields while the preview updates. Use **+ Add section** to add participation information, a timeline, teams, a bracket, campaigns, referendums, or a custom text section. Up to 20 text sections can be saved. Each section has move-up, move-down and remove controls. The event header stays first; removed sections keep their content for later re-adding. New drafts start with the event header, while older events retain their existing visible sections.
+The event editor uses the same renderer as the public page. The management tools sit together in a left panel that becomes sticky as the page scrolls. Switch between **View** and **Edit**, then click a section to edit it in place. **Save section** stores the private draft and returns to the rendered section; **Cancel** restores the content from before that editor opened. Only one section is edited at a time, and failed saves keep its fields open.
+
+Use **+ Add section** to add participation information, a timeline, teams, a bracket, campaigns, referendums, or a custom text section. Up to 20 text sections can be saved. Each section has move-up, move-down and remove controls. The event header stays first; removed sections keep their content for later re-adding. Cancelling an editor for a newly added section also cancels that addition. New drafts start with the event header, while older events retain their existing visible sections.
 
 **Save draft** stores content and section order privately; **Publish** promotes the saved draft. **Unpublish** withdraws the public copy while retaining the draft. Version checks prevent a stale editor from overwriting a newer save. Editors can arrange their text, campaign and referendum sections without removing or changing the order of sections they do not manage.
 
-Under **Edit → Background**, choose a colour or paste a direct HTTPS image URL. The background updates in the preview and appears on the public event page and division card after saving and publishing. **Reset background** restores the site's default background.
+Open **Background** in the tools panel to choose a colour or paste a direct HTTPS image URL. Its changes preview immediately, with Save/Cancel controls underneath. The background appears on the public event page and division card after saving and publishing. **Reset background** restores the site's default background.
 
 | Role | Event content | Publication | Management roles |
 | --- | --- | --- | --- |
