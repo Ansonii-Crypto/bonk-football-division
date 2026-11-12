@@ -414,6 +414,67 @@ textarea.division-field {
     text-align: left;
 }
 
+.division-history-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.division-history-actions .division-button {
+    min-height: 2.35rem;
+    padding: 0.5rem;
+}
+
+.division-navigation-tools {
+    display: grid;
+    gap: 0.6rem;
+    min-width: 0;
+    padding-top: 0.9rem;
+    border-top: 1px solid #3b5266;
+}
+
+.division-outline {
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.division-share-status,
+.division-background-hint {
+    margin: 0;
+    color: #a9c2d3;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.division-share-status:empty,
+.division-share-fallback[hidden] {
+    display: none;
+}
+
+.division-share-status.division-error,
+.division-background-hint.division-error {
+    color: #ffc4af;
+}
+
+.division-share-fallback {
+    width: 100%;
+    min-width: 0;
+    padding: 0.6rem 0.7rem;
+    color: #d2e8f4;
+    background: #0d1926;
+    border: 1px solid #4a6377;
+    border-radius: 0.5rem;
+    font: inherit;
+    font-size: 0.76rem;
+    cursor: text;
+}
+
+.division-share-fallback:focus {
+    outline: none;
+    border-color: #92c3d7;
+}
+
 .division-management-actions > .division-button:last-child {
     color: #aec6d6;
     background: transparent;
@@ -473,6 +534,29 @@ textarea.division-field {
     margin: 0.35rem 0 0;
     color: #a9c2d3;
     font-size: 0.82rem;
+}
+
+.division-inline-heading .division-tool-close {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 2rem;
+    padding: 0.35rem 0.6rem;
+    color: #bcd5e4;
+    background: transparent;
+    border-color: #4b6b82;
+    font-size: 0.75rem;
+}
+
+.division-inline-heading .division-tool-close:hover {
+    color: #e2f3fc;
+    background: #223e52;
+    border-color: #82a8bf;
+}
+
+.division-tool-panel .division-inline-heading {
+    align-items: center;
+    gap: 0.6rem;
+    padding-bottom: 0.8rem;
 }
 
 .division-inline-fields {
@@ -675,6 +759,8 @@ textarea.division-field {
     }
 
     .division-mode-switch,
+    .division-history-actions,
+    .division-navigation-tools,
     .division-management-actions > .division-button,
     .division-tool-panel {
         grid-column: 1 / -1;

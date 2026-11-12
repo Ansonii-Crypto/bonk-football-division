@@ -330,3 +330,279 @@ test("an open section chooser cannot mutate the draft while a global save is pen
     await tick();
     assert.equal(latest.customSections.length, 1, "the blocked click did not leave a hidden extra section in the draft");
 });
+
+test("background controls can close in several ways without losing local changes or writing them", async t => {
+    let model = modelFor({ ...content(), appearance: { backgroundColor: "#384c68", backgroundImage: "" } });
+    const writes = [];
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            const body = JSON.parse(options.body);
+            writes.push(body);
+            model = { ...model, content: body.content, version: body.version + 1 };
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    const backdrop = () => document.querySelector(".division-page-background");
+    const closed = () => assert.equal(document.querySelector(".division-inline-editor"), null);
+    button(window, "Edit").click();
+    button(window, "Background").click();
+    input(window, field(window, "Background colour"), "#407159");
+    button(window, "Background").click();
+    closed();
+    assert.equal(backdrop().style.backgroundColor, "rgb(64, 113, 89)");
+    assert.equal(button(window, "Save draft").disabled, false);
+
+    button(window, "Background").click();
+    assert.equal(field(window, "Background colour").value, "#407159");
+    input(window, field(window, "Background image URL"), "https://example.com/local-field.jpg");
+    button(window, "Close panel").click();
+    closed();
+    assert.match(backdrop().style.backgroundImage, /local-field\.jpg/);
+
+    button(window, "Background").click();
+    field(window, "Background colour").dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    closed();
+    button(window, "Background").click();
+    document.querySelector(".division-live-preview").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    closed();
+    button(window, "Background").click();
+    document.body.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    closed();
+    assert.equal(writes.length, 0, "dismissing appearance controls does not save or publish the draft");
+
+    button(window, "Save draft").click();
+    await tick();
+    assert.equal(writes.length, 1);
+    assert.deepEqual(model.content.appearance, { backgroundColor: "#407159", backgroundImage: "https://example.com/local-field.jpg" });
+    assert.equal(model.publishedAt, null);
+});
+
+test("editing another section closes background controls and preserves its unsaved appearance", async t => {
+    const model = modelFor();
+    let writes = 0;
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") writes += 1;
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    button(window, "Edit").click();
+    button(window, "Background").click();
+    input(window, field(window, "Background colour"), "#407159");
+    const editor = editSection(window, "general");
+    assert.equal(editor.closest("[data-section]").dataset.section, "general");
+    assert.equal(document.querySelector(".division-tool-panel .division-inline-editor"), null);
+    assert.equal(document.querySelectorAll(".division-inline-editor").length, 1);
+    input(window, field(window, "About this event"), "This section change should be discarded.");
+    document.querySelector(".division-inline-cancel").click();
+    assert.match(document.querySelector('[data-section="general"]').textContent, /Original description/);
+    assert.equal(document.querySelector(".division-page-background").style.backgroundColor, "rgb(64, 113, 89)");
+    button(window, "Background").click();
+    assert.equal(field(window, "Background colour").value, "#407159", "cancelling another section leaves the parked appearance intact");
+    assert.equal(writes, 0);
+});
+
+test("closed background changes can be undone and redone in the preview without writes", async t => {
+    const model = modelFor({ ...content(), appearance: { backgroundColor: "#384c68", backgroundImage: "https://example.com/original.jpg" } });
+    let writes = 0;
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") writes += 1;
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const backdrop = () => window.document.querySelector(".division-page-background");
+    button(window, "Edit").click();
+    button(window, "Background").click();
+    input(window, field(window, "Background colour"), "#407159");
+    input(window, field(window, "Background image URL"), "https://example.com/revised.jpg");
+    button(window, "Close panel").click();
+    assert.equal(backdrop().style.backgroundColor, "rgb(64, 113, 89)");
+    assert.match(backdrop().style.backgroundImage, /revised\.jpg/);
+    button(window, "Undo").click();
+    assert.equal(backdrop().style.backgroundColor, "rgb(56, 76, 104)");
+    assert.match(backdrop().style.backgroundImage, /original\.jpg/);
+    assert.equal(button(window, "Save draft").disabled, true);
+    button(window, "Redo").click();
+    assert.equal(backdrop().style.backgroundColor, "rgb(64, 113, 89)");
+    assert.match(backdrop().style.backgroundImage, /revised\.jpg/);
+    assert.equal(button(window, "Save draft").disabled, false);
+    assert.equal(writes, 0);
+});
+
+test("restoring the saved background values leaves no unsaved change after closing the panel", async t => {
+    const appearance = { backgroundColor: "#384c68", backgroundImage: "https://example.com/original.jpg" };
+    const model = modelFor({ ...content(), appearance });
+    let writes = 0;
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") writes += 1;
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    button(window, "Edit").click();
+    button(window, "Background").click();
+    input(window, field(window, "Background colour"), "#407159");
+    input(window, field(window, "Background image URL"), "https://example.com/revised.jpg");
+    button(window, "Close panel").click();
+    assert.equal(button(window, "Save draft").disabled, false);
+    button(window, "Background").click();
+    input(window, field(window, "Background colour"), appearance.backgroundColor);
+    input(window, field(window, "Background image URL"), appearance.backgroundImage);
+    button(window, "Close panel").click();
+    assert.equal(button(window, "Save draft").disabled, true, "dirty state compares with the saved draft rather than the previous panel session");
+    assert.equal(button(window, "Publish").disabled, false);
+    assert.equal(writes, 0);
+});
+
+test("a failed background save keeps its fields and lets management switch to another section", async t => {
+    const model = modelFor();
+    let writes = 0;
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            writes += 1;
+            return Response.json({ error: "This division changed elsewhere. Reload it before saving." }, { status: 409 });
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    button(window, "Edit").click();
+    button(window, "Background").click();
+    input(window, field(window, "Background colour"), "#407159");
+    document.querySelector(".division-inline-save").click();
+    await tick();
+    assert.equal(field(window, "Background colour").value, "#407159");
+    assert.equal(field(window, "Background colour").matches(":disabled"), false);
+    assert.match(document.querySelector(".division-inline-status").textContent, /changed elsewhere/);
+    const otherSection = document.querySelector('[data-section="general"] .division-section-edit');
+    assert.equal(otherSection.disabled, false, "a failed appearance save does not trap management in its panel");
+    otherSection.click();
+    assert.equal(document.querySelector(".division-inline-editor").closest("[data-section]").dataset.section, "general");
+    assert.equal(document.querySelector(".division-page-background").style.backgroundColor, "rgb(64, 113, 89)");
+    assert.equal(writes, 1, "switching sections does not retry the failed save");
+});
+
+test("undo and redo preserve layout history after the reordered draft has been saved", async t => {
+    let model = modelFor({ ...content(), sectionOrder: ["timeline", "campaigns"] });
+    const writes = [];
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            const body = JSON.parse(options.body);
+            writes.push(body);
+            model = { ...model, content: body.content, version: body.version + 1 };
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    const order = () => [...document.querySelectorAll(".division-live-preview .division-view > [data-section]")].map(node => node.dataset.section);
+    button(window, "Edit").click();
+    assert.equal(button(window, "Undo").disabled, true);
+    assert.equal(button(window, "Redo").disabled, true);
+    document.querySelector('[data-section="campaigns"] .division-section-move-up').click();
+    assert.deepEqual(order(), ["general", "campaigns", "timeline"]);
+    button(window, "Undo").click();
+    assert.deepEqual(order(), ["general", "timeline", "campaigns"]);
+    button(window, "Redo").click();
+    assert.deepEqual(order(), ["general", "campaigns", "timeline"]);
+    assert.equal(writes.length, 0);
+    button(window, "Save draft").click();
+    await tick();
+    assert.deepEqual(model.content.sectionOrder, ["campaigns", "timeline"]);
+    assert.equal(button(window, "Save draft").disabled, true);
+    button(window, "Undo").click();
+    assert.deepEqual(order(), ["general", "timeline", "campaigns"]);
+    assert.equal(button(window, "Save draft").disabled, false, "undoing saved changes creates a new unsaved draft change");
+    assert.deepEqual(model.content.sectionOrder, ["campaigns", "timeline"], "undo does not rewrite the server");
+    button(window, "Redo").click();
+    assert.deepEqual(order(), ["general", "campaigns", "timeline"]);
+    assert.equal(button(window, "Save draft").disabled, true);
+    assert.equal(writes.length, 1);
+    assert.equal(model.publishedAt, null);
+});
+
+test("a saved section can be undone and saved again without publishing the reversal", async t => {
+    let model = modelFor();
+    const writes = [];
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            const body = JSON.parse(options.body);
+            writes.push(body);
+            model = { ...model, content: body.content, version: body.version + 1 };
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    button(window, "Edit").click();
+    editSection(window);
+    input(window, field(window, "About this event"), "A saved description");
+    document.querySelector(".division-inline-save").click();
+    await tick();
+    assert.equal(model.content.description, "A saved description");
+    button(window, "Undo").click();
+    assert.match(document.querySelector('[data-section="general"]').textContent, /Original description/);
+    assert.equal(model.content.description, "A saved description");
+    assert.equal(writes.length, 1);
+    button(window, "Redo").click();
+    assert.match(document.querySelector('[data-section="general"]').textContent, /A saved description/);
+    button(window, "Undo").click();
+    button(window, "Save draft").click();
+    await tick();
+    assert.equal(writes.length, 2);
+    assert.equal(writes[1].version, 2);
+    assert.equal(model.content.description, "Original description");
+    assert.equal(model.publishedAt, null);
+});
+
+test("the section outline scrolls to the chosen event section without changing its content or route", async t => {
+    const model = modelFor({ ...content(), sectionOrder: ["timeline", "campaigns", "custom:rules"],
+        timeline: [{ id: "opening", title: "Opening matches", date: "2026-11-21", description: "The event starts." }],
+        customSections: [{ id: "rules", title: "Match rules", description: "Fair play." }] });
+    let requests = 0;
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        assert.equal(options.method || "GET", "GET");
+        requests += 1;
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const scrolled = [];
+    window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.dataset.section); };
+    const outline = window.document.querySelector("select.division-outline");
+    assert.ok(outline, "the tools provide a section outline");
+    assert.equal([...outline.options].some(option => option.value === "campaigns"), false, "View mode omits empty sections with no visible scroll target");
+    assert.ok([...outline.options].some(option => option.value === "custom:rules" && option.textContent.includes("Match rules")));
+    outline.value = "timeline";
+    outline.dispatchEvent(new window.Event("change", { bubbles: true }));
+    outline.value = "custom:rules";
+    outline.dispatchEvent(new window.Event("change", { bubbles: true }));
+    assert.deepEqual(scrolled, ["timeline", "custom:rules"]);
+    assert.equal(window.location.hash, "#divisions/1");
+    assert.equal(requests, 1);
+    button(window, "Edit").click();
+    assert.ok([...window.document.querySelector("select.division-outline").options].some(option => option.value === "campaigns"), "Edit mode includes the visible empty section");
+});
+
+test("copy event link copies the division URL and supplies selectable text when copying is unavailable", async t => {
+    const model = modelFor();
+    const window = await page(t, async path => {
+        assert.equal(path, "/api/manage/divisions/1");
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const copied = [];
+    Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: { writeText: async value => { copied.push(value); } } });
+    button(window, "Copy event link").click();
+    await tick();
+    assert.deepEqual(copied, ["https://bonk-football-division.com/#divisions/1"]);
+    assert.match(window.document.querySelector(".division-share-status").textContent, /copied/i);
+    Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: undefined });
+    button(window, "Copy event link").click();
+    await tick();
+    const fallback = window.document.querySelector("input.division-share-fallback");
+    assert.ok(fallback, "the URL remains available when clipboard access is unavailable");
+    assert.equal(fallback.value, copied[0]);
+    assert.equal(fallback.readOnly, true);
+    assert.equal(fallback.selectionStart, 0);
+    assert.equal(fallback.selectionEnd, fallback.value.length);
+});

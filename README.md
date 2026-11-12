@@ -114,7 +114,9 @@ Use **+ Add section** to add participation information, a timeline, teams, a bra
 
 **Save draft** stores content and section order privately; **Publish** promotes the saved draft. **Unpublish** withdraws the public copy while retaining the draft. Version checks prevent a stale editor from overwriting a newer save. Editors can arrange their text, campaign and referendum sections without removing or changing the order of sections they do not manage.
 
-Open **Background** in the tools panel to choose a colour or paste a direct HTTPS image URL. Its changes preview immediately, with Save/Cancel controls underneath. The background appears on the public event page and division card after saving and publishing. **Reset background** restores the site's default background.
+Open **Background** in the tools panel to choose a colour or paste a direct HTTPS image URL. Changes preview immediately. Click Background again, use **Close panel**, press Escape, click outside the panel, or choose another section to close it while keeping those changes locally. **Cancel** reverts that panel's changes; **Save section** or **Save draft** stores them privately. The background appears on the public event page and division card after publishing. **Reset background** restores the site's default background.
+
+The management tools include **Undo** and **Redo** for the last 30 section edits and layout/background changes in this open event. Undoing a saved change creates an unsaved reversal; it does not write to the server or change the published page. Reloading the saved draft clears this local history. **Jump to section** scrolls directly to a section, and **Copy event link** copies its page URL with a selectable fallback when clipboard access is unavailable. Sharing a private draft's URL does not grant access to it.
 
 | Role | Event content | Publication | Management roles |
 | --- | --- | --- | --- |

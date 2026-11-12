@@ -244,10 +244,59 @@
         let scrollRestoreRevision = 0;
         let scrollAnchorLockRevision = 0;
         let previousScrollAnchoring = null;
+        const undoHistory = [];
+        const redoHistory = [];
+        let undoButton;
+        let redoButton;
+        let outline;
+        let backgroundEvents = null;
 
         function editable(key) { return model?.permissions?.editSections?.includes(key.startsWith("custom:") ? "custom" : key); }
         function customSection(key) { return draft.customSections?.find(item => `custom:${item.id}` === key); }
         function snapshot() { return { content: clone(draft), dirty, message }; }
+        function sameContent(first, second) { return JSON.stringify(first) === JSON.stringify(second); }
+        function blockingEditor() { return Boolean(activeEditor && activeEditor.key !== "appearance"); }
+        function backgroundChanged() { return activeEditor?.key === "appearance" && !sameContent(activeEditor.before.content, draft); }
+        function remember(content) {
+            if (sameContent(content, draft)) return;
+            if (!undoHistory.length || !sameContent(undoHistory.at(-1), content)) undoHistory.push(clone(content));
+            if (undoHistory.length > 30) undoHistory.shift();
+            redoHistory.length = 0;
+        }
+        function markRestored(text) {
+            dirty = !sameContent(draft, model.content);
+            editRevision += 1;
+            message = dirty ? `${text} · save before publishing` : `${text} · matches the saved draft`;
+        }
+        function parkBackground() {
+            if (activeEditor?.key !== "appearance" || pending) return false;
+            remember(activeEditor.before.content);
+            activeEditor = null;
+            backgroundEvents?.abort();
+            selected = "";
+            dirty = !sameContent(draft, model.content);
+            if (!dirty) message = "Preview matches the saved draft";
+            return true;
+        }
+        function closeBackground() {
+            if (activeEditor?.key !== "appearance" || pending) return;
+            const position = editorScrollPosition();
+            parkBackground();
+            paintAtScrollPosition(position);
+        }
+        function travelHistory(backwards) {
+            if (pending || blockingEditor()) return;
+            const position = editorScrollPosition();
+            parkBackground();
+            const from = backwards ? undoHistory : redoHistory;
+            const to = backwards ? redoHistory : undoHistory;
+            if (!from.length) return;
+            to.push(clone(draft));
+            draft = from.pop();
+            selected = ""; pickerOpen = false;
+            markRestored(backwards ? "Change undone" : "Change restored");
+            paintAtScrollPosition(position);
+        }
         function previewSections() { return [...(preview?.querySelectorAll(".division-view > [data-section]") || [])]; }
         function editorScrollPosition() {
             const nodes = previewSections();
@@ -325,12 +374,17 @@
             if (notice) notice.textContent = message || (model?.publishedAt
                 ? model.version === model.publishedVersion ? "Draft preview · published version is up to date" : "Draft preview · saved changes are not published"
                 : "Private draft preview · publish when the event is ready");
-            for (const action of container.querySelectorAll(".division-management-actions .division-button")) action.disabled = pending || Boolean(activeEditor);
-            if (saveButton) saveButton.disabled = pending || Boolean(activeEditor) || !dirty;
-            if (publishButton) publishButton.disabled = pending || Boolean(activeEditor) || dirty;
+            for (const action of container.querySelectorAll(".division-management-actions .division-button")) action.disabled = pending || blockingEditor();
+            if (saveButton) saveButton.disabled = pending || blockingEditor() || !dirty;
+            if (publishButton) publishButton.disabled = pending || blockingEditor() || dirty;
+            if (undoButton) undoButton.disabled = pending || blockingEditor() || (!undoHistory.length && !backgroundChanged());
+            if (redoButton) redoButton.disabled = pending || blockingEditor() || !redoHistory.length || backgroundChanged();
+            if (outline) outline.disabled = pending || blockingEditor();
             if (editorFields) editorFields.disabled = pending;
             if (inlineSave) inlineSave.disabled = pending || !dirty;
             if (inlineCancel) inlineCancel.disabled = pending;
+            const close = toolPanel?.querySelector(".division-tool-close");
+            if (close) close.disabled = pending;
             if (inlineStatus) inlineStatus.textContent = activeEditor?.error || (pending ? "Saving section…" : "");
             if (pending) {
                 for (const control of preview?.querySelectorAll(".division-section-control, .division-add-section, .division-add-panel button") || []) control.disabled = true;
@@ -346,32 +400,36 @@
                 onSection: selectSection,
                 onAddSection() { selectSection("add"); },
                 onMoveSection(key, offset) {
-                    if (activeEditor || pending) return;
+                    if (blockingEditor() || pending) return;
                     const order = window.DivisionView.sectionOrder(draft);
                     const index = order.indexOf(key);
                     const next = index + offset;
                     if (!editable(key) || index < 0 || next < 0 || next >= order.length) return;
+                    closeBackground();
+                    const before = clone(draft);
                     [order[index], order[next]] = [order[next], order[index]];
                     draft.sectionOrder = order;
+                    remember(before);
                     change();
                     const control = preview.querySelector(`[data-section="${key}"] .division-section-move-${offset < 0 ? "up" : "down"}:not(:disabled)`)
                         || preview.querySelector(`[data-section="${key}"] .division-section-edit`);
                     control?.focus({ preventScroll: true });
                 },
                 onRemoveSection(key) {
-                    if (!editable(key) || activeEditor || pending) return;
+                    if (!editable(key) || blockingEditor() || pending) return;
+                    closeBackground();
+                    const before = clone(draft);
                     draft.sectionOrder = window.DivisionView.sectionOrder(draft).filter(value => value !== key);
+                    remember(before);
                     pickerOpen = true;
                     change();
                     preview.querySelector(".division-add-section")?.focus({ preventScroll: true });
                 }
             }));
-            if (activeEditor) {
+            if (blockingEditor()) {
                 for (const control of preview.querySelectorAll(".division-section-control, .division-add-section")) control.disabled = true;
-                if (activeEditor.key !== "appearance") {
-                    const target = [...preview.querySelectorAll("[data-section]")].find(node => node.dataset.section === activeEditor.key);
-                    if (target) target.replaceChildren(renderInlineEditor());
-                }
+                const target = [...preview.querySelectorAll("[data-section]")].find(node => node.dataset.section === activeEditor.key);
+                if (target) target.replaceChildren(renderInlineEditor());
             } else if (pickerOpen && editing) {
                 const panel = element("div", "division-add-panel");
                 panel.append(element("p", "division-eyebrow", "Build your page"), element("h2", "", "Add a section"));
@@ -381,35 +439,37 @@
                 if (add) add.replaceWith(panel);
                 else preview.append(panel);
             }
+            refreshOutline();
         }
         function selectSection(key) {
             if (pending) return;
+            const position = activeEditor?.key === "appearance" ? editorScrollPosition() : null;
+            parkBackground();
             if (activeEditor) {
                 if (activeEditor.key === key) return;
                 activeEditor.error = "Save or cancel this section before opening another.";
                 updateNotice();
                 return;
             }
-            if (key === "add") { pickerOpen = true; toolMode = ""; paint(); return; }
-            beginSection(key);
+            if (key === "add") { pickerOpen = true; toolMode = ""; if (position) paintAtScrollPosition(position); else paint(); return; }
+            beginSection(key, snapshot(), position);
         }
-        function beginSection(key, before = snapshot()) {
+        function beginSection(key, before = snapshot(), position = null) {
             if (!editable(key) || activeEditor || pending) return;
             selected = key;
             editing = true;
             pickerOpen = false;
             toolMode = "";
             activeEditor = { key, before, error: "" };
-            paint();
+            if (position) paintAtScrollPosition(position);
+            else paint();
         }
         function cancelSection() {
             if (!activeEditor || pending) return;
             const position = editorScrollPosition();
             const before = activeEditor.before;
             draft = clone(before.content);
-            dirty = before.dirty;
-            message = before.message;
-            editRevision += 1;
+            markRestored("Section changes cancelled");
             activeEditor = null;
             selected = "";
             paintAtScrollPosition(position);
@@ -422,7 +482,9 @@
             const title = element("div");
             title.append(element("p", "division-eyebrow", "Editing section"), element("h2", "", heading));
             header.append(title);
+            if (selected === "appearance") header.append(button("Close panel", closeBackground, "division-tool-close"));
             form.append(header);
+            if (selected === "appearance") form.append(element("p", "division-background-hint", "Click outside, choose another section or press Escape to close. Changes stay in your draft until saved; Cancel reverts them."));
             editorFields = element("fieldset", "division-inline-fields");
             form.append(editorFields);
             paintInspector();
@@ -440,6 +502,7 @@
                 const current = activeEditor;
                 if (await save() && activeEditor === current) {
                     const position = editorScrollPosition();
+                    remember(current.before.content);
                     activeEditor = null;
                     selected = "";
                     paintAtScrollPosition(position);
@@ -460,6 +523,7 @@
                 draft = clone(model.content);
                 dirty = false; pending = false; message = "";
                 activeEditor = null; selected = ""; pickerOpen = false; toolMode = "";
+                undoHistory.length = 0; redoHistory.length = 0;
                 document.title = `${draft.name} | Bonk Football Division`;
                 paint();
             } catch (error) {
@@ -486,7 +550,7 @@
             } finally {
                 pending = false;
                 if (section.isConnected) {
-                    if (!activeEditor) paintPreview();
+                    if (!blockingEditor()) paintPreview();
                     updateNotice();
                 }
             }
@@ -515,6 +579,7 @@
             scrollRestoreRevision += 1;
             container.replaceChildren();
             saveButton = null; publishButton = null; notice = null;
+            undoButton = null; redoButton = null; outline = null;
             editorFields = null; inlineStatus = null; inlineSave = null; inlineCancel = null; toolPanel = null;
             container.classList.toggle("division-event-container--managed", Boolean(model.permissions?.editSections?.length));
             if (model.permissions?.editSections?.length) {
@@ -525,26 +590,39 @@
                 notice = element("p", "division-message"); notice.setAttribute("role", "status"); identity.append(notice);
                 const actions = element("div", "division-management-actions");
                 const modes = element("div", "division-mode-switch");
-                const view = button("View", () => { editing = false; pickerOpen = false; toolMode = ""; paint(); });
-                const edit = button("Edit", () => { editing = true; paint(); });
+                const view = button("View", () => setMode(false));
+                const edit = button("Edit", () => setMode(true));
                 view.disabled = pending; edit.disabled = pending;
                 view.setAttribute("aria-pressed", String(!editing)); edit.setAttribute("aria-pressed", String(editing));
                 modes.append(view, edit);
                 const pageActions = element("div", "division-page-actions");
-                saveButton = button("Save draft", () => void save(), "division-button--primary");
+                saveButton = button("Save draft", () => { closeBackground(); void save(); }, "division-button--primary");
                 pageActions.append(saveButton);
                 if (model.permissions.publish) {
-                    publishButton = button("Publish", () => void publish(), "division-button--warm"); pageActions.append(publishButton);
-                    if (model.publishedAt) { const unpublishButton = button("Unpublish", () => void unpublish(), "division-button--danger"); unpublishButton.disabled = pending; pageActions.append(unpublishButton); }
+                    publishButton = button("Publish", () => { closeBackground(); void publish(); }, "division-button--warm"); pageActions.append(publishButton);
+                    if (model.publishedAt) { const unpublishButton = button("Unpublish", () => { closeBackground(); void unpublish(); }, "division-button--danger"); unpublishButton.disabled = pending; pageActions.append(unpublishButton); }
                 }
                 const settings = element("div", "division-settings-actions");
-                if (editable("appearance")) settings.append(button("Background", () => beginSection("appearance")));
-                if (model.permissions.manageMembers) settings.append(button("Management roles", () => { toolMode = toolMode === "members" ? "" : "members"; pickerOpen = false; paint(); }));
-                actions.append(modes, pageActions, settings);
+                if (editable("appearance")) {
+                    const background = button("Background", () => { if (activeEditor?.key === "appearance") closeBackground(); else beginSection("appearance"); });
+                    background.setAttribute("aria-expanded", String(activeEditor?.key === "appearance"));
+                    settings.append(background);
+                }
+                if (model.permissions.manageMembers) settings.append(button("Management roles", () => {
+                    const position = activeEditor?.key === "appearance" ? editorScrollPosition() : null;
+                    parkBackground(); toolMode = toolMode === "members" ? "" : "members"; pickerOpen = false;
+                    if (position) paintAtScrollPosition(position); else paint();
+                }));
+                const history = element("div", "division-history-actions");
+                undoButton = button("Undo", () => travelHistory(true));
+                redoButton = button("Redo", () => travelHistory(false));
+                history.append(undoButton, redoButton);
+                actions.append(modes, pageActions, settings, history);
                 const reload = button("Reload saved draft", () => {
                     if (!dirty || window.confirm("Discard the unsaved preview changes and reload the saved draft?")) void load();
                 });
                 reload.disabled = pending; actions.append(reload);
+                actions.append(navigationTools());
                 toolbar.append(identity, actions);
                 if (activeEditor?.key === "appearance" || toolMode === "members") {
                     toolPanel = element("div", "division-tool-panel");
@@ -553,7 +631,7 @@
                         editMembers(toolPanel);
                         toolPanel.append(button("Close roles", () => { toolMode = ""; paint(); }));
                     }
-                    toolbar.append(toolPanel);
+                    settings.after(toolPanel);
                 }
                 container.append(toolbar);
             }
@@ -563,6 +641,82 @@
             paintPreview();
             if (activeEditor?.key === "appearance") toolPanel.append(renderInlineEditor());
             updateNotice();
+            watchBackgroundDismissal();
+        }
+
+        function setMode(value) {
+            const position = activeEditor?.key === "appearance" ? editorScrollPosition() : null;
+            parkBackground(); editing = value; pickerOpen = false; toolMode = "";
+            if (position) paintAtScrollPosition(position); else paint();
+        }
+
+        function navigationTools() {
+            const tools = element("div", "division-navigation-tools");
+            const label = element("label", "division-field-label", "Jump to section");
+            outline = element("select", "division-field division-outline");
+            refreshOutline();
+            outline.addEventListener("change", () => {
+                const key = outline.value;
+                if (!key || pending || blockingEditor()) return;
+                if (parkBackground()) paint();
+                const target = previewSections().find(node => node.dataset.section === key);
+                target?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+                outline.value = "";
+            });
+            label.append(outline);
+            const status = element("p", "division-share-status"); status.setAttribute("role", "status");
+            const fallback = element("input", "division-field division-share-fallback");
+            fallback.type = "text"; fallback.readOnly = true; fallback.hidden = true;
+            fallback.setAttribute("aria-label", "Event link");
+            const copy = button("Copy event link", async () => {
+                const url = new URL(window.location.href);
+                url.search = ""; url.hash = `divisions/${encodeURIComponent(divisionId)}`;
+                copy.disabled = true;
+                try {
+                    await navigator.clipboard.writeText(url.href);
+                    if (status.isConnected) { status.textContent = "Event link copied"; fallback.hidden = true; }
+                } catch {
+                    if (fallback.isConnected) {
+                        fallback.value = url.href; fallback.hidden = false;
+                        fallback.focus({ preventScroll: true }); fallback.select();
+                        status.textContent = "Copy this event link.";
+                    }
+                } finally { if (copy.isConnected) updateNotice(); }
+            });
+            tools.append(label, copy, status, fallback);
+            return tools;
+        }
+
+        function refreshOutline() {
+            if (!outline) return;
+            const placeholder = element("option", "", "Choose a section"); placeholder.value = "";
+            outline.replaceChildren(placeholder);
+            for (const node of previewSections()) {
+                const key = node.dataset.section;
+                const option = element("option", "", customSection(key)?.title || sectionNames[key] || "Text section");
+                option.value = key; outline.append(option);
+            }
+        }
+
+        function watchBackgroundDismissal() {
+            backgroundEvents?.abort();
+            if (activeEditor?.key !== "appearance") return;
+            const events = new AbortController();
+            backgroundEvents = events;
+            document.addEventListener("click", event => {
+                if (!section.isConnected) { events.abort(); return; }
+                if (pending || !(event.target instanceof Element)) return;
+                if (event.target.closest(".division-tool-panel, .division-management-actions")) return;
+                closeBackground();
+            }, { signal: events.signal });
+            document.addEventListener("keydown", event => {
+                if (!section.isConnected) { events.abort(); return; }
+                if (event.key !== "Escape" || pending) return;
+                event.preventDefault();
+                closeBackground();
+                [...container.querySelectorAll("button")].find(node => node.textContent === "Background")?.focus({ preventScroll: true });
+            }, { signal: events.signal });
+            for (const type of ["hashchange", "bonk-account-change"]) window.addEventListener(type, () => events.abort(), { once: true, signal: events.signal });
         }
 
         function inputField(parent, label, value, onInput, options = {}) {
