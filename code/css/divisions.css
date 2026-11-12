@@ -368,19 +368,30 @@ textarea.division-field {
     border-radius: 0.8rem;
 }
 
-.division-inspector-navigation {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    margin-bottom: 1.2rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid #3b5368;
+.division-section-picker {
+    display: grid;
+    gap: 0.65rem;
 }
 
-.division-inspector-navigation .division-button {
-    min-height: 2.1rem;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.7rem;
+.division-section-choice {
+    display: grid;
+    justify-content: stretch;
+    gap: 0.3rem;
+    width: 100%;
+    padding: 0.9rem;
+    text-align: left;
+}
+
+.division-section-choice strong {
+    color: #d6edfa;
+    font-size: 0.88rem;
+}
+
+.division-section-choice span {
+    color: #a6bdcc;
+    font-size: 0.76rem;
+    font-weight: 400;
+    line-height: 1.5;
 }
 
 .division-inspector-body {

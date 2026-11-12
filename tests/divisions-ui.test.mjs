@@ -14,7 +14,7 @@ const content = () => ({
     timeline: [], campaigns: [], referendums: [], teams: [], results: {}
 });
 const permissions = {
-    editSections: ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums"],
+    editSections: ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums", "custom"],
     generalFields: ["name", "summary", "description", "status", "startDate", "endDate"],
     publish: true, manageMembers: true, assignRoles: ["director", "organizer", "editor"]
 };
@@ -147,4 +147,71 @@ test("typing during a draft save keeps newer preview edits unsaved", async t => 
     assert.equal(description.value, "Newer local text");
     assert.equal(button(window, "Save draft").disabled, false);
     assert.equal(button(window, "Publish").disabled, true);
+});
+
+test("sections can be added, moved and removed without losing their content", async t => {
+    let saved;
+    const initial = { ...content(), sectionOrder: ["timeline", "campaigns"],
+        timeline: [{ id: "opening", title: "Opening matches", date: "2026-11-21", description: "The event starts." }],
+        campaigns: [{ id: "fair-play", title: "Fair play", description: "Respect the players." }] };
+    const model = { id: 1, content: initial, version: 1, publishedAt: null, publishedVersion: null, role: "site-admin", permissions };
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            saved = JSON.parse(options.body).content;
+            return Response.json({ division: { ...model, content: saved, version: 2 } });
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    const order = () => [...document.querySelectorAll(".division-live-preview .division-view > [data-section]")].map(node => node.dataset.section);
+    button(window, "Edit").click();
+    assert.equal(document.querySelector(".division-inspector-navigation"), null);
+    assert.deepEqual(order(), ["general", "timeline", "campaigns"]);
+    document.querySelector('[data-section="campaigns"] .division-section-move-up').click();
+    assert.deepEqual(order(), ["general", "campaigns", "timeline"]);
+    document.querySelector('[data-section="timeline"] .division-section-remove').click();
+    assert.deepEqual(order(), ["general", "campaigns"]);
+    document.querySelector(".division-add-section").click();
+    document.querySelector('[data-add-section="timeline"]').click();
+    assert.deepEqual(order(), ["general", "campaigns", "timeline"]);
+    assert.match(document.querySelector('[data-section="timeline"]').textContent, /Opening matches/);
+    button(window, "Save draft").click();
+    await tick();
+    assert.deepEqual(saved.sectionOrder, ["campaigns", "timeline"]);
+    assert.equal(saved.timeline[0].title, "Opening matches");
+});
+
+test("extra text sections can be added when all built-in sections are present and edited after saving", async t => {
+    let saved;
+    const initial = { ...content(), sectionOrder: ["participation", "timeline", "teams", "bracket", "campaigns", "referendums"], customSections: [] };
+    const model = { id: 1, content: initial, version: 1, publishedAt: null, publishedVersion: null, role: "site-admin", permissions };
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            const body = JSON.parse(options.body);
+            saved = body.content;
+            return Response.json({ division: { ...model, content: saved, version: body.version + 1 } });
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    button(window, "Edit").click();
+    document.querySelector(".division-add-section").click();
+    document.querySelector('[data-add-section="custom"]').click();
+    const title = document.querySelector(".division-inspector input");
+    const description = document.querySelector(".division-inspector textarea");
+    title.value = "Match rules";
+    title.dispatchEvent(new window.Event("input", { bubbles: true }));
+    description.value = "First version of the rules.";
+    description.dispatchEvent(new window.Event("input", { bubbles: true }));
+    button(window, "Save draft").click();
+    await tick();
+    assert.equal(saved.customSections[0].title, "Match rules");
+    assert.ok(saved.sectionOrder.includes(`custom:${saved.customSections[0].id}`));
+    description.value = "Updated rules after the first save.";
+    description.dispatchEvent(new window.Event("input", { bubbles: true }));
+    button(window, "Save draft").click();
+    await tick();
+    assert.equal(saved.customSections[0].description, "Updated rules after the first save.");
 });

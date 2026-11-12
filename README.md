@@ -108,7 +108,9 @@ The **Admin center** link appears only for the initial administrator. Its connec
 
 Open **Divisions** to create a division as the site administrator or find events assigned to your account. Each event has its own `#divisions/ID` page inside the normal site navigation. New divisions start as private drafts; published events appear in the public list.
 
-The event editor uses the same renderer as the public page. Switch between **View** and **Edit**, select a section, and change its fields while the preview updates. **Save draft** stores changes privately; **Publish** promotes the saved draft. **Unpublish** withdraws the public copy while retaining the draft. Version checks prevent a stale editor from overwriting a newer save.
+The event editor uses the same renderer as the public page. Switch between **View** and **Edit**, select a section in the preview, and change its fields while the preview updates. Use **+ Add section** to add participation information, a timeline, teams, a bracket, campaigns, referendums, or a custom text section. Up to 20 text sections can be saved. Each section has move-up, move-down and remove controls. The event header stays first; removed sections keep their content for later re-adding. New drafts start with the event header, while older events retain their existing visible sections.
+
+**Save draft** stores content and section order privately; **Publish** promotes the saved draft. **Unpublish** withdraws the public copy while retaining the draft. Version checks prevent a stale editor from overwriting a newer save. Editors can arrange their text, campaign and referendum sections without removing or changing the order of sections they do not manage.
 
 Under **Edit → Background**, choose a colour or paste a direct HTTPS image URL. The background updates in the preview and appears on the public event page and division card after saving and publishing. **Reset background** restores the site's default background.
 
@@ -117,7 +119,7 @@ Under **Edit → Background**, choose a colour or paste a direct HTTPS image URL
 | Site administrator | All divisions and sections | Publish and unpublish | Assign or remove any division role |
 | Director | All sections of assigned divisions | Publish and unpublish | Assign or remove organizers and editors |
 | Organizer | Event information, timeline, participation, teams, bracket, campaigns and referendums | Draft only | None |
-| Editor | Background, description, campaigns and referendums | Draft only | None |
+| Editor | Background, description, text sections, campaigns and referendums | Draft only | None |
 
 Roles are scoped to one division and checked by the Worker on every management request. Assign a role using the person's **Bonk player ID** after they have signed in to this site. A division role grants no assessment or site administrator privileges.
 

@@ -74,7 +74,7 @@ test("division previews show editable empty sections and render event text witho
     assert.equal(publicView.querySelector("[data-section='timeline']"), null);
     assert.match(publicView.querySelector("[data-section='participation']").textContent, /4 vs 4/);
     const selected = [];
-    const editView = window.DivisionView.render(content, {
+    const editView = window.DivisionView.render({ ...content, sectionOrder: ["participation", "timeline"] }, {
         editing: true,
         editableSections: ["timeline"],
         onSection: key => selected.push(key)
@@ -82,4 +82,76 @@ test("division previews show editable empty sections and render event text witho
     assert.equal(editView.querySelectorAll(".division-section-edit").length, 1);
     editView.querySelector("[data-section='timeline'] .division-section-edit").click();
     assert.deepEqual(selected, ["timeline"]);
+});
+
+test("explicit section order controls public layout while legacy events keep their existing sections", t => {
+    const { DivisionView } = preview(t);
+    const content = {
+        name: "Cup", participation: { mode: "solo", teamSize: 1 },
+        timeline: [{ id: "opening", title: "Opening round", date: "", description: "" }],
+        teams: teams(2), campaigns: [{ id: "campaign", title: "Campaign", description: "" }], referendums: []
+    };
+    assert.deepEqual(Array.from(DivisionView.sectionOrder(content)), ["participation", "timeline", "teams", "bracket", "campaigns"]);
+    const rendered = DivisionView.render({ ...content, sectionOrder: ["campaigns", "participation", "timeline"] });
+    assert.deepEqual([...rendered.querySelectorAll(".division-event-section")].map(node => node.dataset.section),
+        ["general", "campaigns", "participation", "timeline"]);
+    assert.equal(rendered.querySelector(".division-section-actions"), null);
+    assert.equal(rendered.querySelector(".division-add-section"), null);
+    const empty = DivisionView.render({ ...content, sectionOrder: [] }, {
+        editing: true, onAddSection() {}
+    });
+    assert.deepEqual([...empty.querySelectorAll(".division-event-section")].map(node => node.dataset.section), ["general"]);
+    assert.ok(empty.querySelector(".division-add-section"));
+});
+
+test("section controls select, move, remove and add without exposing controls on restricted sections", t => {
+    const { DivisionView } = preview(t);
+    const calls = [];
+    const rendered = DivisionView.render({
+        name: "Cup", sectionOrder: ["campaigns", "participation", "timeline"],
+        participation: { teamSize: 1 }, timeline: [], campaigns: [], teams: [], referendums: []
+    }, {
+        editing: true, selectedSection: "timeline", editableSections: ["campaigns", "timeline", "teams"],
+        onSection: key => calls.push(["select", key]),
+        onMoveSection: (key, offset) => calls.push(["move", key, offset]),
+        onRemoveSection: key => calls.push(["remove", key]),
+        onAddSection: () => calls.push(["add"])
+    });
+    assert.equal(rendered.querySelector("[data-section='general'] .division-section-actions"), null);
+    assert.equal(rendered.querySelector("[data-section='participation'] .division-section-actions"), null);
+    assert.ok(rendered.querySelector("[data-section='timeline']").classList.contains("division-event-section--selected"));
+    assert.equal(rendered.querySelector("[data-section='campaigns'] .division-section-move-up").disabled, true);
+    assert.equal(rendered.querySelector("[data-section='timeline'] .division-section-move-down").disabled, true);
+    rendered.querySelector("[data-section='timeline'] .division-section-edit").click();
+    rendered.querySelector("[data-section='campaigns'] .division-section-move-down").click();
+    rendered.querySelector("[data-section='timeline'] .division-section-remove").click();
+    rendered.querySelector(".division-add-section").click();
+    assert.deepEqual(calls, [["select", "timeline"], ["move", "campaigns", 1], ["remove", "timeline"], ["add"]]);
+});
+
+test("custom text sections follow saved order, use safe text and keep Add section available", t => {
+    const { DivisionView } = preview(t);
+    const custom = { id: "rules", title: "<img src=x>", description: "<script>alert(1)</script>" };
+    const content = {
+        name: "Cup", participation: { teamSize: 1 }, timeline: [], teams: [], campaigns: [], referendums: [],
+        customSections: [custom], sectionOrder: ["custom:rules", "participation", "timeline", "teams", "bracket", "campaigns", "referendums"]
+    };
+    const calls = [];
+    const rendered = DivisionView.render(content, {
+        editing: true, editableSections: ["custom"],
+        onAddSection: () => calls.push("add"), onSection: key => calls.push(key)
+    });
+    assert.deepEqual([...rendered.querySelectorAll(".division-event-section")].map(node => node.dataset.section),
+        ["general", ...content.sectionOrder]);
+    const textSection = rendered.querySelector("[data-section='custom:rules']");
+    assert.equal(textSection.querySelector("h2").textContent, custom.title);
+    assert.equal(textSection.querySelector(".division-event-copy").textContent, custom.description);
+    assert.equal(rendered.querySelector("img, script"), null);
+    textSection.querySelector(".division-section-edit").click();
+    rendered.querySelector(".division-add-section").click();
+    assert.deepEqual(calls, ["custom:rules", "add"]);
+    assert.deepEqual(Array.from(DivisionView.sectionOrder({ ...content, sectionOrder: undefined })), ["participation", "custom:rules"]);
+    assert.deepEqual(Array.from(DivisionView.sectionOrder({ ...content, sectionOrder: ["custom:missing", "custom:rules"] })), ["custom:rules"]);
+    const publicView = DivisionView.render(content);
+    assert.equal(publicView.querySelector(".division-section-actions, .division-add-section"), null);
 });

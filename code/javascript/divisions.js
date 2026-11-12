@@ -2,6 +2,14 @@
 
 (() => {
     const sectionNames = { general: "Event information", appearance: "Background", participation: "Participation", timeline: "Timeline", teams: "Teams and players", bracket: "Tournament bracket", campaigns: "Campaigns", referendums: "Referendums" };
+    const sectionDescriptions = {
+        participation: "Match format and how players can take part.",
+        timeline: "Dates, milestones and event announcements.",
+        teams: "Entrants and their player rosters.",
+        bracket: "Fixtures, results and the route to the final.",
+        campaigns: "Announcements and campaigns for the event.",
+        referendums: "Proposals and the choices being discussed."
+    };
     const roleNames = { "site-admin": "Site administrator", director: "Division director", organizer: "Organiser", editor: "Editor" };
 
     function element(tag, className, text) {
@@ -227,7 +235,8 @@
         let saveButton;
         let publishButton;
 
-        function editable(key) { return model?.permissions?.editSections?.includes(key); }
+        function editable(key) { return model?.permissions?.editSections?.includes(key.startsWith("custom:") ? "custom" : key); }
+        function customSection(key) { return draft.customSections?.find(item => `custom:${item.id}` === key); }
         function change() { editRevision += 1; dirty = true; message = "Unsaved changes · save before publishing"; updateNotice(); paintPreview(); }
         function updateNotice() {
             if (notice) notice.textContent = message || (model?.publishedAt
@@ -241,8 +250,44 @@
             if (!preview) return;
             applyBackground(backdrop, draft.appearance);
             section.classList.toggle("division-custom-background", !backdrop.hidden);
-            preview.replaceChildren(window.DivisionView.render(draft, { editing, editableSections: model.permissions?.editSections || [],
-                onSection(key) { selected = key; paintInspector(); inspector?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); } }));
+            preview.replaceChildren(window.DivisionView.render(draft, {
+                editing, selectedSection: selected, editableSections: model.permissions?.editSections || [],
+                onSection: selectSection,
+                onAddSection() { selectSection("add"); },
+                onMoveSection(key, offset) {
+                    const order = window.DivisionView.sectionOrder(draft);
+                    const index = order.indexOf(key);
+                    const next = index + offset;
+                    if (!editable(key) || index < 0 || next < 0 || next >= order.length) return;
+                    [order[index], order[next]] = [order[next], order[index]];
+                    draft.sectionOrder = order;
+                    selected = key;
+                    change();
+                    paintInspector();
+                    const control = preview.querySelector(`[data-section="${key}"] .division-section-move-${offset < 0 ? "up" : "down"}:not(:disabled)`)
+                        || preview.querySelector(`[data-section="${key}"] .division-section-edit`);
+                    control?.focus({ preventScroll: true });
+                },
+                onRemoveSection(key) {
+                    if (!editable(key)) return;
+                    draft.sectionOrder = window.DivisionView.sectionOrder(draft).filter(value => value !== key);
+                    selected = "add";
+                    change();
+                    paintInspector();
+                    if (inspector) inspector.scrollTop = 0;
+                    preview.querySelector(".division-add-section")?.focus({ preventScroll: true });
+                }
+            }));
+        }
+        function selectSection(key) {
+            selected = key;
+            paintInspector();
+            paintPreview();
+            if (window.matchMedia("(max-width: 48rem)").matches) {
+                inspector?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+            } else if (inspector) {
+                inspector.scrollTop = 0;
+            }
         }
         async function load() {
             try {
@@ -270,7 +315,7 @@
                 const data = await request(`/api/manage/divisions/${divisionId}`, "PUT", { version: model.version, content: draft });
                 if (!section.isConnected) return;
                 model = data.division;
-                if (editRevision === savedRevision) { draft = clone(model.content); dirty = false; message = "Draft saved · preview changes before publishing"; }
+                if (editRevision === savedRevision) { dirty = false; message = "Draft saved · preview changes before publishing"; }
                 else message = "Draft saved · newer preview edits still need saving";
                 document.title = `${draft.name} | Bonk Football Division`;
             } catch (error) {
@@ -313,6 +358,8 @@
                 view.setAttribute("aria-pressed", String(!editing)); edit.setAttribute("aria-pressed", String(editing));
                 saveButton = button("Save draft", () => void save(), "division-button--primary");
                 actions.append(view, edit, saveButton);
+                if (editable("appearance")) actions.append(button("Background", () => { editing = true; selected = "appearance"; paint(); }));
+                if (model.permissions.manageMembers) actions.append(button("Management roles", () => { editing = true; selected = "members"; paint(); }));
                 if (model.permissions.publish) {
                     publishButton = button("Publish", () => void publish(), "division-button--warm"); actions.append(publishButton);
                     if (model.publishedAt) { const unpublishButton = button("Unpublish", () => void unpublish(), "division-button--danger"); unpublishButton.disabled = pending; actions.append(unpublishButton); }
@@ -350,17 +397,15 @@
         }
         function paintInspector() {
             if (!inspector) return;
-            if (!editable(selected) && selected !== "members") selected = model.permissions.editSections[0];
+            if (selected !== "add" && selected !== "members" && !editable(selected)) selected = "general";
+            if (Object.hasOwn(sectionDescriptions, selected) && !window.DivisionView.sectionOrder(draft).includes(selected)) selected = "add";
+            if (selected.startsWith("custom:") && !window.DivisionView.sectionOrder(draft).includes(selected)) selected = "add";
             inspector.replaceChildren();
-            const navigation = element("nav", "division-inspector-navigation"); navigation.setAttribute("aria-label", "Event sections");
-            for (const key of model.permissions.editSections) {
-                const tab = button(sectionNames[key], () => { selected = key; paintInspector(); }); tab.setAttribute("aria-pressed", String(selected === key)); navigation.append(tab);
-            }
-            if (model.permissions.manageMembers) {
-                const tab = button("Management roles", () => { selected = "members"; paintInspector(); }); tab.setAttribute("aria-pressed", String(selected === "members")); navigation.append(tab);
-            }
-            inspector.append(element("p", "division-eyebrow", "Live editor"), navigation);
-            const body = element("div", "division-inspector-body"); body.append(element("h2", "", selected === "members" ? "Management roles" : sectionNames[selected])); inspector.append(body);
+            inspector.append(element("p", "division-eyebrow", selected === "add" ? "Build your page" : "Selected section"));
+            const body = element("div", "division-inspector-body");
+            body.append(element("h2", "", selected === "add" ? "Add a section" : selected === "members" ? "Management roles" : selected.startsWith("custom:") ? "Text section" : sectionNames[selected]));
+            inspector.append(body);
+            if (selected === "add") editSectionPicker(body);
             if (selected === "general") editGeneral(body);
             if (selected === "appearance") editAppearance(body);
             if (selected === "participation") editParticipation(body);
@@ -368,6 +413,52 @@
             if (selected === "teams") editTeams(body);
             if (selected === "bracket") editBracket(body);
             if (selected === "members") editMembers(body);
+            if (selected.startsWith("custom:")) editCustomSection(body);
+        }
+        function editSectionPicker(body) {
+            const order = window.DivisionView.sectionOrder(draft);
+            const available = Object.keys(sectionDescriptions).filter(key => editable(key) && !order.includes(key));
+            const choices = element("div", "division-section-picker");
+            function addToPage(key) {
+                draft.sectionOrder = [...window.DivisionView.sectionOrder(draft), key];
+                selected = key;
+                change();
+                paintInspector();
+                if (inspector) inspector.scrollTop = 0;
+            }
+            if (editable("custom")) {
+                const addText = button("", () => {
+                    const item = { id: id(), title: "New text section", description: "" };
+                    draft.customSections = [...(draft.customSections || []), item];
+                    addToPage(`custom:${item.id}`);
+                }, "division-section-choice");
+                addText.dataset.addSection = "custom";
+                addText.disabled = (draft.customSections?.length || 0) >= 20;
+                addText.append(element("strong", "", "+ Text section"), element("span", "", "A heading and text for anything else your event needs."));
+                choices.append(addText);
+                for (const item of draft.customSections || []) {
+                    const key = `custom:${item.id}`;
+                    if (order.includes(key)) continue;
+                    const restore = button("", () => addToPage(key), "division-section-choice");
+                    restore.dataset.addSection = key;
+                    restore.append(element("strong", "", item.title), element("span", "", "Restore this saved text section."));
+                    choices.append(restore);
+                }
+            }
+            for (const key of available) {
+                const choice = button("", () => addToPage(key), "division-section-choice");
+                choice.dataset.addSection = key;
+                choice.append(element("strong", "", sectionNames[key]), element("span", "", sectionDescriptions[key]));
+                choices.append(choice);
+            }
+            if (!choices.childElementCount) choices.append(element("p", "division-muted", "All available sections are on the page."));
+            body.append(choices, element("p", "division-editor-note", "Remove a section to hide it from the page. Its content is kept so you can add it again later."));
+        }
+        function editCustomSection(body) {
+            const item = customSection(selected);
+            if (!item) return;
+            inputField(body, "Section title", item.title, value => { item.title = value; }, { maxLength: 120 });
+            inputField(body, "Section text", item.description, value => { item.description = value; }, { multiline: true, rows: 8, maxLength: 6000 });
         }
         function editGeneral(body) {
             const fields = model.permissions.generalFields || (model.role === "editor" ? ["description"] : ["name", "summary", "description", "status", "startDate", "endDate"]);

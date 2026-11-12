@@ -23,6 +23,11 @@
     box-shadow: 0 0 0 1px rgb(120 217 255 / 10%);
 }
 
+.division-event-section.division-event-section--selected {
+    border-color: #91cee6;
+    box-shadow: 0 0 0 1px rgb(120 217 255 / 18%);
+}
+
 .division-section-heading {
     display: flex;
     align-items: center;
@@ -38,7 +43,19 @@
     letter-spacing: -0.03em;
 }
 
-.division-section-edit {
+.division-section-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-left: auto;
+}
+
+.division-section-actions .division-section-control {
+    margin-left: 0;
+}
+
+.division-section-control {
     margin-left: auto;
     padding: 0.4rem 0.7rem;
     color: #b8e8ff;
@@ -51,11 +68,58 @@
     cursor: pointer;
 }
 
-.division-section-edit:hover {
+.division-section-control:hover:not(:disabled) {
     background: rgb(120 217 255 / 15%);
 }
 
-.division-section-edit:focus-visible,
+.division-section-control:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.division-section-remove {
+    color: #eab4a8;
+    background: rgb(216 90 72 / 7%);
+    border-color: rgb(231 135 115 / 24%);
+}
+
+.division-section-remove:hover {
+    background: rgb(216 90 72 / 16%);
+}
+
+.division-add-section {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    width: 100%;
+    min-height: 8rem;
+    padding: 1.5rem;
+    color: #b9deee;
+    background: rgb(19 38 54 / 70%);
+    border: 2px dashed #48677d;
+    border-radius: 0.85rem;
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.division-add-section:hover {
+    color: #e0f3fb;
+    background: #1c3548;
+    border-color: #8abed5;
+}
+
+.division-add-section-icon {
+    font-size: 2rem;
+    font-weight: 400;
+    line-height: 1;
+}
+
+.division-section-control:focus-visible,
+.division-add-section:focus-visible,
 .division-bracket:focus-visible {
     outline: 2px solid #bddceb;
     outline-offset: 4px;

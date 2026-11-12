@@ -309,3 +309,114 @@ test("division appearance is editable by managers and published as a separate sa
             content: { ...division.content, appearance: invalid } }, { cookie: editor, method: "PUT" })).status, 400);
     }
 });
+
+test("division section order is validated, retained in drafts, and published separately", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    let division = await create(env, admin);
+    assert.deepEqual(division.content.sectionOrder, []);
+    division = await save(env, admin, division, {
+        sectionOrder: ["campaigns", "timeline"],
+        timeline: [{ id: "opening", title: "Opening match", date: "2026-11-12", description: "" }],
+        campaigns: [{ id: "welcome", title: "Welcome", description: "Play football" }]
+    });
+    assert.deepEqual(division.content.sectionOrder, ["campaigns", "timeline"]);
+    assert.equal((await request(env, `/api/manage/divisions/${division.id}/publish`, { version: division.version }, { cookie: admin })).status, 200);
+    const published = (await (await request(env, `/api/divisions/${division.id}`)).json()).division.content;
+    assert.deepEqual(published.sectionOrder, ["campaigns", "timeline"]);
+    division = await save(env, admin, division, { sectionOrder: ["campaigns"] });
+    assert.equal(division.content.timeline.length, 1, "removing a section retains its content for re-adding");
+    assert.deepEqual((await (await request(env, `/api/divisions/${division.id}`)).json()).division.content.sectionOrder, ["campaigns", "timeline"]);
+    for (const sectionOrder of [null, "timeline", ["timeline", "timeline"], ["general"], ["appearance"], ["unknown"]]) {
+        assert.equal((await request(env, `/api/manage/divisions/${division.id}`, {
+            version: division.version, content: { ...division.content, sectionOrder }
+        }, { cookie: admin, method: "PUT" })).status, 400);
+    }
+
+    const legacy = { ...division.content, teams: ["blue", "red"].map(id => ({ id, name: id, players: [{ username: id, bonkId: null }] })) };
+    delete legacy.sectionOrder;
+    const response = await request(env, `/api/manage/divisions/${division.id}`, { version: division.version, content: legacy }, { cookie: admin, method: "PUT" });
+    assert.equal(response.status, 200);
+    division = (await response.json()).division;
+    assert.deepEqual(division.content.sectionOrder, ["participation", "timeline", "teams", "bracket", "campaigns"]);
+    assert.equal((await request(env, `/api/manage/divisions/${division.id}/publish`, { version: division.version }, { cookie: admin })).status, 200);
+    assert.deepEqual((await (await request(env, `/api/divisions/${division.id}`)).json()).division.content.sectionOrder,
+        ["participation", "timeline", "teams", "bracket", "campaigns"]);
+});
+
+test("editors can arrange their own sections without hiding or reordering restricted sections", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    const editor = await signIn(env, 1001, "Editor");
+    let division = await create(env, admin);
+    await grant(env, admin, division.id, "1001", "editor");
+    division = await save(env, admin, division, {
+        sectionOrder: ["participation", "timeline", "campaigns"],
+        timeline: [{ id: "opening", title: "Opening", date: "", description: "" }],
+        campaigns: [{ id: "welcome", title: "Welcome", description: "" }]
+    });
+    division = await save(env, editor, division, {
+        sectionOrder: ["campaigns", "participation", "referendums", "timeline"],
+        referendums: [{ id: "format", title: "Next format?", description: "", status: "planned", options: ["Solo", "Teams"] }]
+    });
+    division = await save(env, editor, division, { sectionOrder: ["participation", "referendums", "timeline"] });
+    assert.equal(division.content.campaigns.length, 1);
+    for (const sectionOrder of [
+        ["timeline", "participation", "referendums"],
+        ["participation", "referendums"],
+        ["participation", "teams", "referendums", "timeline"]
+    ]) {
+        assert.equal((await request(env, `/api/manage/divisions/${division.id}`, {
+            version: division.version, content: { ...division.content, sectionOrder }
+        }, { cookie: editor, method: "PUT" })).status, 403);
+    }
+    division = await save(env, admin, division, { sectionOrder: ["timeline", "participation"] });
+    assert.deepEqual(division.content.sectionOrder, ["timeline", "participation"]);
+});
+
+test("custom sections have validated references and remain scoped editable content", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    const editor = await signIn(env, 1001, "Editor");
+    let division = await create(env, admin);
+    assert.deepEqual(division.content.customSections, []);
+    await grant(env, admin, division.id, "1001", "editor");
+    division = await save(env, admin, division, { sectionOrder: ["participation"] });
+    division = await save(env, editor, division, {
+        customSections: [{ id: "rules", title: "Match rules", description: "Respect the referee." }],
+        sectionOrder: ["custom:rules", "participation"]
+    });
+    assert.ok(division.permissions.editSections.includes("custom"));
+    assert.equal((await request(env, `/api/manage/divisions/${division.id}/publish`, { version: division.version }, { cookie: admin })).status, 200);
+    const published = (await (await request(env, `/api/divisions/${division.id}`)).json()).division.content;
+    assert.deepEqual(published.customSections, division.content.customSections);
+    assert.deepEqual(published.sectionOrder, ["custom:rules", "participation"]);
+    division = await save(env, editor, division, { sectionOrder: ["participation"] });
+    assert.equal(division.content.customSections.length, 1, "hidden custom content is available to restore");
+    assert.deepEqual((await (await request(env, `/api/divisions/${division.id}`)).json()).division.content.sectionOrder, ["custom:rules", "participation"]);
+    for (const changes of [
+        { sectionOrder: ["custom:unknown", "participation"] },
+        { sectionOrder: ["custom:rules", "custom:rules", "participation"] },
+        { customSections: null },
+        { customSections: [{ id: "rules", title: "", description: "" }] },
+        { customSections: [{ id: "rules", title: "Rules", description: "", extra: true }] },
+        { customSections: [{ id: "bad:id", title: "Rules", description: "" }] },
+        { customSections: [{ id: "rules", title: "Rules", description: "x".repeat(6001) }] },
+        { customSections: Array.from({ length: 21 }, (_, index) => ({ id: `section-${index}`, title: "Title", description: "" })) }
+    ]) {
+        assert.equal((await request(env, `/api/manage/divisions/${division.id}`, {
+            version: division.version, content: { ...division.content, ...changes }
+        }, { cookie: editor, method: "PUT" })).status, 400);
+    }
+    assert.equal((await request(env, `/api/manage/divisions/${division.id}`, {
+        version: division.version, content: { ...division.content, sectionOrder: ["custom:rules"] }
+    }, { cookie: editor, method: "PUT" })).status, 403);
+
+    const legacy = { ...division.content };
+    delete legacy.sectionOrder;
+    const legacyResponse = await request(env, `/api/manage/divisions/${division.id}`, {
+        version: division.version, content: legacy
+    }, { cookie: admin, method: "PUT" });
+    assert.equal(legacyResponse.status, 200);
+    assert.deepEqual((await legacyResponse.json()).division.content.sectionOrder, ["participation", "custom:rules"]);
+});

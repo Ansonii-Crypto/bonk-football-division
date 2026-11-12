@@ -3,6 +3,24 @@
 (() => {
     const statusNames = { upcoming: "Upcoming", registration: "Registration", live: "Live", completed: "Completed" };
     const registrationNames = { open: "Open participation", "invite-only": "By invitation", closed: "Registration closed" };
+    const optionalSections = ["participation", "timeline", "teams", "bracket", "campaigns", "referendums"];
+
+    function sectionOrder(content = {}) {
+        const custom = Array.isArray(content.customSections) ? content.customSections.slice(0, 20)
+            .filter(section => section && typeof section.id === "string" && section.id.length > 0)
+            .map(section => `custom:${section.id}`) : [];
+        if (Array.isArray(content.sectionOrder)) {
+            return [...new Set(content.sectionOrder.filter(key => optionalSections.includes(key) || custom.includes(key)))];
+        }
+        const order = ["participation"];
+        if (content.timeline?.length) order.push("timeline");
+        if (content.teams?.length) order.push("teams");
+        if (content.teams?.length >= 2) order.push("bracket");
+        if (content.campaigns?.length) order.push("campaigns");
+        if (content.referendums?.length) order.push("referendums");
+        order.push(...custom);
+        return order;
+    }
 
     function element(tag, className, text) {
         const node = document.createElement(tag);
@@ -101,12 +119,14 @@
     function render(content = {}, options = {}) {
         const page = element("div", "division-view");
         const allowed = options.editableSections ? new Set(options.editableSections) : null;
-        const canEdit = key => Boolean(options.editing && (!allowed || allowed.has(key)));
+        const canEdit = key => Boolean(options.editing && (!allowed || allowed.has(key.startsWith("custom:") ? "custom" : key)));
         const hasText = value => typeof value === "string" && value.trim().length > 0;
         const list = value => Array.isArray(value) ? value : [];
+        const order = sectionOrder(content);
+        const sections = new Map();
 
         function section(key, title, hasContent = true, hero = false) {
-            if (!hasContent && !options.editing) {
+            if (key !== "general" && !order.includes(key) || !hasContent && !options.editing) {
                 return null;
             }
             const node = element("section", `division-event-section${hero ? " division-event-hero" : ""}`);
@@ -117,11 +137,31 @@
             }
             if (canEdit(key)) {
                 node.classList.add("division-event-section--editable");
-                const edit = element("button", "division-section-edit", hasContent ? "Edit section" : "Add content");
+                if (options.selectedSection === key) node.classList.add("division-event-section--selected");
+                const actions = element("div", "division-section-actions");
+                const edit = element("button", "division-section-control division-section-edit", "Edit");
                 edit.type = "button";
-                edit.setAttribute("aria-label", `${hasContent ? "Edit" : "Add"} ${title || "event information"}`);
+                edit.setAttribute("aria-label", `Edit ${title || "event information"}`);
                 edit.addEventListener("click", () => options.onSection?.(key));
-                heading.append(edit);
+                actions.append(edit);
+                if (key !== "general") {
+                    for (const [offset, name, label] of [[-1, "up", "↑"], [1, "down", "↓"]]) {
+                        const move = element("button", `division-section-control division-section-move-${name}`, label);
+                        move.type = "button";
+                        move.disabled = offset < 0 ? order.indexOf(key) === 0 : order.indexOf(key) === order.length - 1;
+                        move.setAttribute("aria-label", `Move ${title} ${name}`);
+                        move.title = `Move ${name}`;
+                        move.addEventListener("click", () => options.onMoveSection?.(key, offset));
+                        actions.append(move);
+                    }
+                    const remove = element("button", "division-section-control division-section-remove", "Remove");
+                    remove.type = "button";
+                    remove.setAttribute("aria-label", `Remove ${title} section`);
+                    remove.title = "Remove this section from the page. Its content is kept so it can be added again.";
+                    remove.addEventListener("click", () => options.onRemoveSection?.(key));
+                    actions.append(remove);
+                }
+                heading.append(actions);
                 node.addEventListener("click", event => {
                     if (!event.target.closest("button, a, input, textarea, select, summary")) {
                         options.onSection?.(key);
@@ -132,6 +172,7 @@
                 node.append(heading);
             }
             page.append(node);
+            sections.set(key, node);
             return node;
         }
 
@@ -168,8 +209,8 @@
             fact.append(element("span", "", label), element("strong", "", value));
             format.append(fact);
         }
-        participationSection.append(format);
-        if (hasText(participation.description)) {
+        participationSection?.append(format);
+        if (participationSection && hasText(participation.description)) {
             participationSection.append(element("p", "division-event-copy", participation.description));
         }
 
@@ -295,8 +336,29 @@
             }
             node.append(cards);
         }
+        for (const custom of list(content.customSections).slice(0, 20)) {
+            if (!custom || typeof custom.id !== "string") continue;
+            const node = section(`custom:${custom.id}`, custom.title || "Untitled section");
+            if (!node) continue;
+            if (hasText(custom.description)) {
+                node.append(element("p", "division-event-copy", custom.description));
+            } else if (options.editing) {
+                node.append(element("p", "division-edit-prompt", "Add the text for this section."));
+            }
+        }
+        page.replaceChildren(sections.get("general"), ...order.map(key => sections.get(key)).filter(Boolean));
+        if (options.editing && (canEdit("custom") || optionalSections.some(key => !order.includes(key) && canEdit(key)))
+            && typeof options.onAddSection === "function") {
+            const add = element("button", "division-add-section");
+            add.type = "button";
+            const plus = element("span", "division-add-section-icon", "+");
+            plus.setAttribute("aria-hidden", "true");
+            add.append(plus, element("span", "", "Add section"));
+            add.addEventListener("click", () => options.onAddSection());
+            page.append(add);
+        }
         return page;
     }
 
-    window.DivisionView = { render, buildBracket, roundTitle };
+    window.DivisionView = { render, buildBracket, roundTitle, sectionOrder };
 })();

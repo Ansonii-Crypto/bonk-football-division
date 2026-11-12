@@ -1,7 +1,8 @@
-const SECTIONS = ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums"];
+const SECTIONS = ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums", "custom"];
+const OPTIONAL_SECTIONS = ["participation", "timeline", "teams", "bracket", "campaigns", "referendums"];
 const GENERAL_FIELDS = ["name", "summary", "description", "status", "startDate", "endDate"];
 const ROLES = ["director", "organizer", "editor"];
-const CONTENT_FIELDS = [...GENERAL_FIELDS, "appearance", "participation", "timeline", "campaigns", "referendums", "teams", "results"];
+const CONTENT_FIELDS = [...GENERAL_FIELDS, "appearance", "sectionOrder", "customSections", "participation", "timeline", "campaigns", "referendums", "teams", "results"];
 
 function object(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -24,6 +25,20 @@ function identifier(value) {
 
 function appearance(content) {
     return { backgroundColor: content.appearance?.backgroundColor ?? "", backgroundImage: content.appearance?.backgroundImage ?? "" };
+}
+
+function customSections(content) {
+    return Array.isArray(content.customSections) ? content.customSections : [];
+}
+
+function sectionOrder(content) {
+    if (Array.isArray(content.sectionOrder)) {
+        return [...content.sectionOrder];
+    }
+    const builtIn = OPTIONAL_SECTIONS.filter(key => key === "participation"
+        || key === "bracket" && content.teams?.length >= 2
+        || key !== "bracket" && Array.isArray(content[key]) && content[key].length > 0);
+    return [...builtIn, ...customSections(content).map(section => `custom:${section.id}`)];
 }
 
 function validAppearance(value) {
@@ -91,6 +106,8 @@ function defaultContent(name, summary) {
     return {
         name, summary, description: "", status: "upcoming", startDate: "", endDate: "",
         appearance: { backgroundColor: "", backgroundImage: "" },
+        sectionOrder: [],
+        customSections: [],
         participation: { mode: "solo", teamSize: 1, registration: "closed", description: "" },
         timeline: [], campaigns: [], referendums: [], teams: [], results: {}
     };
@@ -105,6 +122,27 @@ function validateContent(content, positiveBonkId) {
     }
     if (!validAppearance(content.appearance)) {
         return "Use a six-digit hex background color and an optional absolute HTTPS image URL without login details.";
+    }
+    if (content.customSections !== undefined && (!Array.isArray(content.customSections) || content.customSections.length > 20)) {
+        return "Use at most 20 custom page sections.";
+    }
+    const custom = customSections(content);
+    const customIds = new Set();
+    for (const section of custom) {
+        if (!object(section) || !identifier(section.id) || customIds.has(section.id)
+            || Object.keys(section).some(key => !["id", "title", "description"].includes(key))
+            || !text(section.title, 120, true) || !text(section.description, 6000)) {
+            return "Each custom section needs a unique ID, a title up to 120 characters and text up to 6000 characters.";
+        }
+        customIds.add(section.id);
+    }
+    const validSectionKey = key => OPTIONAL_SECTIONS.includes(key)
+        || typeof key === "string" && key.startsWith("custom:") && customIds.has(key.slice(7));
+    if (content.sectionOrder !== undefined && (!Array.isArray(content.sectionOrder)
+        || content.sectionOrder.length > OPTIONAL_SECTIONS.length + 20
+        || new Set(content.sectionOrder).size !== content.sectionOrder.length
+        || content.sectionOrder.some(key => !validSectionKey(key)))) {
+        return "Choose each supported page section at most once in the section order.";
     }
     if (!["upcoming", "registration", "live", "completed"].includes(content.status)
         || !date(content.startDate) || !date(content.endDate)) {
@@ -188,7 +226,7 @@ function validateContent(content, positiveBonkId) {
 
 function permissions(role) {
     return {
-        editSections: role === "editor" ? ["general", "appearance", "campaigns", "referendums"] : [...SECTIONS],
+        editSections: role === "editor" ? ["general", "appearance", "campaigns", "referendums", "custom"] : [...SECTIONS],
         generalFields: role === "editor" ? ["description"] : [...GENERAL_FIELDS],
         publish: ["site-admin", "director"].includes(role),
         manageMembers: ["site-admin", "director"].includes(role),
@@ -199,6 +237,8 @@ function permissions(role) {
 function managedDivision(row, role) {
     const content = JSON.parse(row.draft_json);
     content.appearance = appearance(content);
+    content.customSections = customSections(content);
+    content.sectionOrder = sectionOrder(content);
     return {
         id: row.id, content, version: row.version,
         publishedAt: row.published_at, publishedVersion: row.published_version,
@@ -209,6 +249,8 @@ function managedDivision(row, role) {
 function publicContent(serialized) {
     const content = JSON.parse(serialized);
     content.appearance = appearance(content);
+    content.customSections = customSections(content);
+    content.sectionOrder = sectionOrder(content);
     content.teams = content.teams.map(team => ({
         ...team,
         players: team.players.map(player => ({ username: player.username }))
@@ -388,9 +430,14 @@ export async function handleDivisionRequest(request, env, url, account, readJson
     }
     if (role === "editor") {
         const previous = JSON.parse(row.draft_json);
-        const allowed = new Set(["description", "appearance", "campaigns", "referendums"]);
+        const editorSections = new Set(["campaigns", "referendums"]);
+        const restrictedOrder = content => sectionOrder(content).filter(key => !editorSections.has(key) && !key.startsWith("custom:"));
+        if (JSON.stringify(restrictedOrder(previous)) !== JSON.stringify(restrictedOrder(body.content))) {
+            return json({ error: "Editors can change only campaign, referendum and custom sections in the page layout." }, 403);
+        }
+        const allowed = new Set(["description", "appearance", "sectionOrder", "customSections", "campaigns", "referendums"]);
         if (CONTENT_FIELDS.some(key => !allowed.has(key) && JSON.stringify(previous[key]) !== JSON.stringify(body.content[key]))) {
-            return json({ error: "Editors can update appearance, the description, campaigns and referendums only." }, 403);
+            return json({ error: "Editors can update appearance, the description, campaigns, referendums and custom sections only." }, 403);
         }
     }
     const updated = await env.DB.prepare(`UPDATE divisions SET draft_json = ?, version = version + 1,
