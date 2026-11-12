@@ -556,7 +556,24 @@ test("a saved section can be undone and saved again without publishing the rever
     assert.equal(model.publishedAt, null);
 });
 
-test("the section outline scrolls to the chosen event section without changing its content or route", async t => {
+test("division management opens in a full-width view and reserves the sidebar for editing", async t => {
+    const model = { ...modelFor(), role: "editor", permissions: { ...permissions, publish: false, manageMembers: false, editSections: ["general", "appearance", "campaigns", "custom"] } };
+    const window = await page(t, async path => {
+        assert.equal(path, "/api/manage/divisions/1");
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    assert.equal(document.querySelector(".division-event-container--managed"), null);
+    assert.ok(document.querySelector(".division-management-tools--view"), "management controls use the compact view layout");
+    button(window, "Edit").click();
+    assert.ok(document.querySelector(".division-event-container--managed"));
+    assert.equal(document.querySelector(".division-management-tools--view"), null);
+    button(window, "View").click();
+    assert.equal(document.querySelector(".division-event-container--managed"), null);
+    assert.ok(document.querySelector(".division-management-tools--view"));
+});
+
+test("the section rail navigates visible sections outside the management tools without changing the route or content", async t => {
     const model = modelFor({ ...content(), sectionOrder: ["timeline", "campaigns", "custom:rules"],
         timeline: [{ id: "opening", title: "Opening matches", date: "2026-11-21", description: "The event starts." }],
         customSections: [{ id: "rules", title: "Match rules", description: "Fair play." }] });
@@ -568,20 +585,188 @@ test("the section outline scrolls to the chosen event section without changing i
         return Response.json({ division: model });
     }, "#divisions/1");
     const scrolled = [];
-    window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.dataset.section); };
-    const outline = window.document.querySelector("select.division-outline");
-    assert.ok(outline, "the tools provide a section outline");
-    assert.equal([...outline.options].some(option => option.value === "campaigns"), false, "View mode omits empty sections with no visible scroll target");
-    assert.ok([...outline.options].some(option => option.value === "custom:rules" && option.textContent.includes("Match rules")));
-    outline.value = "timeline";
-    outline.dispatchEvent(new window.Event("change", { bubbles: true }));
-    outline.value = "custom:rules";
-    outline.dispatchEvent(new window.Event("change", { bubbles: true }));
-    assert.deepEqual(scrolled, ["timeline", "custom:rules"]);
+    window.HTMLElement.prototype.scrollIntoView = function (options) { scrolled.push({ key: this.dataset.section, block: options.block }); };
+    const { document } = window;
+    const rail = document.querySelector("nav.division-section-rail");
+    assert.ok(rail, "the event provides a section rail");
+    assert.equal(rail.getAttribute("aria-label"), "Event sections");
+    assert.ok(rail.closest(".division-workspace"));
+    assert.equal(rail.closest(".division-management-tools"), null);
+    assert.equal(document.querySelector("select.division-outline"), null);
+    assert.equal(rail.querySelector('[data-section-target="campaigns"]'), null, "View mode omits empty sections with no visible scroll target");
+    assert.match(rail.querySelector('[data-section-target="custom:rules"]').getAttribute("aria-label"), /Match rules/);
+    rail.querySelector('[data-section-target="timeline"]').click();
+    rail.querySelector('[data-section-target="custom:rules"]').click();
+    assert.deepEqual(scrolled, [{ key: "timeline", block: "start" }, { key: "custom:rules", block: "start" }]);
     assert.equal(window.location.hash, "#divisions/1");
     assert.equal(requests, 1);
     button(window, "Edit").click();
-    assert.ok([...window.document.querySelector("select.division-outline").options].some(option => option.value === "campaigns"), "Edit mode includes the visible empty section");
+    assert.ok(document.querySelector('.division-section-dot[data-section-target="campaigns"]'), "Edit mode includes the visible empty section");
+    document.querySelector('[data-section="custom:rules"] .division-section-move-up').click();
+    assert.deepEqual([...document.querySelectorAll(".division-section-dot")].map(dot => dot.dataset.sectionTarget), ["general", "timeline", "custom:rules", "campaigns"]);
+    document.querySelector('[data-section="campaigns"] .division-section-remove').click();
+    assert.equal(document.querySelector('.division-section-dot[data-section-target="campaigns"]'), null, "removing a section also removes its navigation point");
+    assert.equal(requests, 1);
+});
+
+test("public division readers have the same visible section navigation without management controls", async t => {
+    const published = { ...content(), sectionOrder: ["timeline", "campaigns", "custom:rules"],
+        timeline: [{ id: "opening", title: "Opening matches", date: "2026-11-21", description: "The event starts." }],
+        customSections: [{ id: "rules", title: "Match rules", description: "Fair play." }] };
+    const window = await page(t, async path => {
+        assert.equal(path, "/api/divisions/2");
+        return Response.json({ division: { id: 2, content: published, publishedAt: 1 } });
+    }, "#divisions/2", null);
+    const { document } = window;
+    assert.equal(document.querySelector(".division-management-tools"), null);
+    assert.equal(document.querySelector(".division-event-container--managed"), null);
+    assert.deepEqual([...document.querySelectorAll(".division-section-dot")].map(dot => dot.dataset.sectionTarget), ["general", "timeline", "custom:rules"]);
+    const scrolled = [];
+    window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.dataset.section); };
+    document.querySelector('.division-section-dot[data-section-target="timeline"]').click();
+    assert.deepEqual(scrolled, ["timeline"]);
+    assert.equal(window.location.hash, "#divisions/2");
+});
+
+test("section rail positions reflect unequal section heights and update when the content is resized", async t => {
+    const model = modelFor({ ...content(), sectionOrder: ["timeline", "custom:rules"],
+        timeline: [{ id: "opening", title: "Opening matches", date: "2026-11-21", description: "The event starts." }],
+        customSections: [{ id: "rules", title: "Match rules", description: "Fair play." }] });
+    const window = await page(t, async path => {
+        assert.equal(path, "/api/manage/divisions/1");
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    let height = 1000;
+    let positions = { general: 100, timeline: 300, "custom:rules": 800 };
+    const original = window.HTMLElement.prototype.getBoundingClientRect;
+    window.HTMLElement.prototype.getBoundingClientRect = function () {
+        if (this.matches(".division-live-preview")) return { top: 100, bottom: 100 + height, height, width: 800, left: 0, right: 800 };
+        if (Object.hasOwn(positions, this.dataset.section || "")) return { top: positions[this.dataset.section], bottom: positions[this.dataset.section] + 100, height: 100, width: 800, left: 0, right: 800 };
+        return original.call(this);
+    };
+    const resized = async () => {
+        window.dispatchEvent(new window.Event("resize"));
+        await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+    };
+    const position = key => parseFloat(document.querySelector(`.division-section-dot[data-section-target="${key}"]`).style.getPropertyValue("--section-position"));
+    await resized();
+    assert.equal(position("general"), 0);
+    assert.equal(position("timeline"), 20);
+    assert.equal(position("custom:rules"), 70, "the gaps follow content height rather than equal spacing");
+    height = 2000;
+    positions = { general: 100, timeline: 600, "custom:rules": 1600 };
+    await resized();
+    assert.equal(position("timeline"), 25);
+    assert.equal(position("custom:rules"), 75);
+});
+
+test("the rail marks the current section while scrolling and honours reduced motion when navigating", async t => {
+    const model = modelFor({ ...content(), sectionOrder: ["timeline", "custom:rules"],
+        timeline: [{ id: "opening", title: "Opening matches", date: "2026-11-21", description: "The event starts." }],
+        customSections: [{ id: "rules", title: "Match rules", description: "Fair play." }] });
+    const window = await page(t, async () => Response.json({ division: model }), "#divisions/1");
+    const { document } = window;
+    let offset = 0;
+    const starts = { general: 100, timeline: 300, "custom:rules": 800 };
+    const original = window.HTMLElement.prototype.getBoundingClientRect;
+    window.HTMLElement.prototype.getBoundingClientRect = function () {
+        if (this.matches(".site-header")) return { top: 0, bottom: 80, height: 80 };
+        if (this.matches(".division-live-preview")) return { top: 100 - offset, bottom: 1100 - offset, height: 1000 };
+        if (Object.hasOwn(starts, this.dataset.section || "")) return { top: starts[this.dataset.section] - offset, bottom: starts[this.dataset.section] - offset + 100, height: 100 };
+        return original.call(this);
+    };
+    Object.defineProperty(window, "scrollY", { configurable: true, get: () => offset });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 700 });
+    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 1200 });
+    const current = () => [...document.querySelectorAll('.division-section-dot[aria-current="location"]')].map(dot => dot.dataset.sectionTarget);
+    const scrolled = async top => {
+        offset = top;
+        window.dispatchEvent(new window.Event("scroll"));
+        await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+    };
+    await scrolled(0);
+    assert.deepEqual(current(), ["general"]);
+    await scrolled(250);
+    assert.deepEqual(current(), ["timeline"]);
+    await scrolled(500);
+    assert.deepEqual(current(), ["custom:rules"], "the final short section is marked when the page reaches its bottom");
+    window.matchMedia = () => ({ matches: true });
+    const navigation = [];
+    window.HTMLElement.prototype.scrollIntoView = function (options) { navigation.push({ key: this.dataset.section, behavior: options.behavior }); };
+    document.querySelector('.division-section-dot[data-section-target="timeline"]').click();
+    assert.deepEqual(navigation, [{ key: "timeline", behavior: "instant" }]);
+});
+
+test("clustered rail points select and highlight the nearest marker while keyboard activation keeps its target", async t => {
+    const model = modelFor({ ...content(), sectionOrder: ["timeline", "custom:rules"],
+        timeline: [{ id: "opening", title: "Opening matches", date: "2026-11-21", description: "The event starts." }],
+        customSections: [{ id: "rules", title: "Match rules", description: "Fair play." }] });
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        assert.equal(options.method || "GET", "GET");
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    const positions = { general: 100, timeline: 800, "custom:rules": 810 };
+    const original = window.HTMLElement.prototype.getBoundingClientRect;
+    window.HTMLElement.prototype.getBoundingClientRect = function () {
+        if (this.matches(".division-live-preview")) return { top: 100, bottom: 1100, height: 1000 };
+        if (this.matches(".division-section-track")) return { top: 100, bottom: 580, height: 480 };
+        if (Object.hasOwn(positions, this.dataset.section || "")) return { top: positions[this.dataset.section], bottom: positions[this.dataset.section] + 100, height: 100 };
+        return original.call(this);
+    };
+    window.dispatchEvent(new window.Event("resize"));
+    await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+    const track = document.querySelector(".division-section-track");
+    const timeline = track.querySelector('[data-section-target="timeline"]');
+    const rules = track.querySelector('[data-section-target="custom:rules"]');
+    assert.equal(parseFloat(timeline.style.getPropertyValue("--section-position")), 70);
+    assert.equal(parseFloat(rules.style.getPropertyValue("--section-position")), 71);
+    const scrolled = [];
+    window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.dataset.section); };
+    const clientY = 100 + 480 * 0.7;
+    rules.dispatchEvent(new window.MouseEvent("click", { bubbles: true, detail: 1, clientY }));
+    assert.deepEqual(scrolled, ["timeline"], "an overlapping later button cannot steal a click closer to the preceding marker");
+    track.dispatchEvent(new window.MouseEvent("pointermove", { bubbles: true, clientY }));
+    assert.equal(timeline.hasAttribute("data-pointer-near"), true);
+    assert.equal(rules.hasAttribute("data-pointer-near"), false);
+    track.dispatchEvent(new window.MouseEvent("pointerleave"));
+    assert.equal(track.querySelector("[data-pointer-near]"), null);
+    rules.click();
+    assert.deepEqual(scrolled, ["timeline", "custom:rules"], "keyboard-style activation keeps the focused button's actual section");
+});
+
+test("section navigation keeps unfinished content edits and parks background changes without saving", async t => {
+    const model = modelFor({ ...content(), sectionOrder: ["timeline", "custom:rules"],
+        timeline: [{ id: "opening", title: "Opening matches", date: "2026-11-21", description: "The event starts." }],
+        customSections: [{ id: "rules", title: "Match rules", description: "Fair play." }] });
+    let writes = 0;
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") writes += 1;
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    const scrolled = [];
+    window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.dataset.section); };
+    button(window, "Edit").click();
+    const editor = editSection(window);
+    input(window, field(window, "About this event"), "Unfinished section text");
+    const timeline = document.querySelector('.division-section-dot[data-section-target="timeline"]');
+    assert.equal(timeline.disabled, false, "scroll navigation stays available while a section is being edited");
+    timeline.click();
+    assert.equal(document.querySelector(".division-inline-editor"), editor, "navigation does not replace the active content editor");
+    assert.equal(field(window, "About this event").value, "Unfinished section text");
+    document.querySelector(".division-inline-cancel").click();
+    button(window, "Background").click();
+    input(window, field(window, "Background colour"), "#407159");
+    document.querySelector('.division-section-dot[data-section-target="custom:rules"]').click();
+    assert.equal(document.querySelector(".division-inline-editor"), null);
+    assert.equal(document.querySelector(".division-page-background").style.backgroundColor, "rgb(64, 113, 89)");
+    assert.equal(button(window, "Save draft").disabled, false);
+    assert.deepEqual(scrolled, ["timeline", "custom:rules"]);
+    assert.equal(writes, 0);
 });
 
 test("copy event link copies the division URL and supplies selectable text when copying is unavailable", async t => {

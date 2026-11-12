@@ -248,8 +248,8 @@
         const redoHistory = [];
         let undoButton;
         let redoButton;
-        let outline;
         let backgroundEvents = null;
+        let clearSectionRail = () => {};
 
         function editable(key) { return model?.permissions?.editSections?.includes(key.startsWith("custom:") ? "custom" : key); }
         function customSection(key) { return draft.customSections?.find(item => `custom:${item.id}` === key); }
@@ -379,7 +379,7 @@
             if (publishButton) publishButton.disabled = pending || blockingEditor() || dirty;
             if (undoButton) undoButton.disabled = pending || blockingEditor() || (!undoHistory.length && !backgroundChanged());
             if (redoButton) redoButton.disabled = pending || blockingEditor() || !redoHistory.length || backgroundChanged();
-            if (outline) outline.disabled = pending || blockingEditor();
+            for (const dot of container.querySelectorAll(".division-section-dot")) dot.disabled = pending;
             if (editorFields) editorFields.disabled = pending;
             if (inlineSave) inlineSave.disabled = pending || !dirty;
             if (inlineCancel) inlineCancel.disabled = pending;
@@ -439,7 +439,7 @@
                 if (add) add.replaceWith(panel);
                 else preview.append(panel);
             }
-            refreshOutline();
+            refreshSectionRail();
         }
         function selectSection(key) {
             if (pending) return;
@@ -579,11 +579,12 @@
             scrollRestoreRevision += 1;
             container.replaceChildren();
             saveButton = null; publishButton = null; notice = null;
-            undoButton = null; redoButton = null; outline = null;
+            undoButton = null; redoButton = null;
             editorFields = null; inlineStatus = null; inlineSave = null; inlineCancel = null; toolPanel = null;
-            container.classList.toggle("division-event-container--managed", Boolean(model.permissions?.editSections?.length));
+            const showSidebar = Boolean(model.permissions?.editSections?.length && (editing || toolMode));
+            container.classList.toggle("division-event-container--managed", showSidebar);
             if (model.permissions?.editSections?.length) {
-                const toolbar = element("aside", "division-management-bar division-management-tools");
+                const toolbar = element("aside", `division-management-bar division-management-tools${showSidebar ? "" : " division-management-tools--view"}`);
                 toolbar.setAttribute("aria-label", "Division management tools");
                 const identity = element("div", "division-management-identity");
                 identity.append(element("strong", "", roleNames[model.role] || "Division management"));
@@ -622,7 +623,7 @@
                     if (!dirty || window.confirm("Discard the unsaved preview changes and reload the saved draft?")) void load();
                 });
                 reload.disabled = pending; actions.append(reload);
-                actions.append(navigationTools());
+                actions.append(sharingTools());
                 toolbar.append(identity, actions);
                 if (activeEditor?.key === "appearance" || toolMode === "members") {
                     toolPanel = element("div", "division-tool-panel");
@@ -650,20 +651,8 @@
             if (position) paintAtScrollPosition(position); else paint();
         }
 
-        function navigationTools() {
-            const tools = element("div", "division-navigation-tools");
-            const label = element("label", "division-field-label", "Jump to section");
-            outline = element("select", "division-field division-outline");
-            refreshOutline();
-            outline.addEventListener("change", () => {
-                const key = outline.value;
-                if (!key || pending || blockingEditor()) return;
-                if (parkBackground()) paint();
-                const target = previewSections().find(node => node.dataset.section === key);
-                target?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
-                outline.value = "";
-            });
-            label.append(outline);
+        function sharingTools() {
+            const tools = element("div", "division-share-tools");
             const status = element("p", "division-share-status"); status.setAttribute("role", "status");
             const fallback = element("input", "division-field division-share-fallback");
             fallback.type = "text"; fallback.readOnly = true; fallback.hidden = true;
@@ -683,19 +672,98 @@
                     }
                 } finally { if (copy.isConnected) updateNotice(); }
             });
-            tools.append(label, copy, status, fallback);
+            tools.append(copy, status, fallback);
             return tools;
         }
 
-        function refreshOutline() {
-            if (!outline) return;
-            const placeholder = element("option", "", "Choose a section"); placeholder.value = "";
-            outline.replaceChildren(placeholder);
-            for (const node of previewSections()) {
+        function refreshSectionRail() {
+            clearSectionRail();
+            const currentPreview = preview;
+            const nodes = previewSections();
+            const workspace = preview?.parentElement;
+            workspace?.querySelector(".division-section-rail-slot")?.remove();
+            if (!workspace || !nodes.length) return;
+            const slot = element("div", "division-section-rail-slot");
+            const rail = element("nav", "division-section-rail");
+            rail.setAttribute("aria-label", "Event sections");
+            const track = element("div", "division-section-track");
+            const dots = nodes.map(node => {
                 const key = node.dataset.section;
-                const option = element("option", "", customSection(key)?.title || sectionNames[key] || "Text section");
-                option.value = key; outline.append(option);
+                const title = customSection(key)?.title || sectionNames[key] || "Text section";
+                const dot = element("button", "division-section-dot");
+                dot.type = "button";
+                dot.dataset.sectionTarget = key;
+                dot.setAttribute("aria-label", title);
+                dot.disabled = pending;
+                const label = element("span", "division-section-label", title);
+                label.setAttribute("aria-hidden", "true");
+                dot.append(label);
+                track.append(dot);
+                return dot;
+            });
+            function nearestDot(clientY) {
+                const bounds = track.getBoundingClientRect();
+                if (!bounds.height) return null;
+                const percent = (clientY - bounds.top) / bounds.height * 100;
+                return dots.reduce((closest, dot) => Math.abs(parseFloat(dot.style.getPropertyValue("--section-position")) - percent)
+                    < Math.abs(parseFloat(closest.style.getPropertyValue("--section-position")) - percent) ? dot : closest);
             }
+            track.addEventListener("click", event => {
+                if (pending) return;
+                // Closely spaced points keep their exact proportions. Pick the nearest
+                // marker rather than whichever overlapping button is painted last.
+                const dot = event.detail > 0 ? nearestDot(event.clientY) : event.target.closest(".division-section-dot");
+                const key = dot?.dataset.sectionTarget;
+                if (!key) return;
+                const wasBackground = parkBackground();
+                if (wasBackground) paint();
+                scrollRestoreRevision += 1;
+                const target = previewSections().find(item => item.dataset.section === key);
+                target?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+                if (wasBackground) [...container.querySelectorAll(".division-section-dot")].find(item => item.dataset.sectionTarget === key)?.focus({ preventScroll: true });
+            });
+            track.addEventListener("pointermove", event => {
+                if (event.pointerType === "touch") return;
+                const nearest = nearestDot(event.clientY);
+                dots.forEach(dot => dot.toggleAttribute("data-pointer-near", dot === nearest));
+            });
+            track.addEventListener("pointerleave", () => dots.forEach(dot => dot.removeAttribute("data-pointer-near")));
+            rail.append(track); slot.append(rail); workspace.append(slot);
+            const events = new AbortController();
+            let frame = null;
+            function update() {
+                frame = null;
+                if (!section.isConnected || preview !== currentPreview) { cleanup(); return; }
+                const bounds = currentPreview.getBoundingClientRect();
+                track.style.setProperty("--section-content-height", `${bounds.height}px`);
+                const rectangles = nodes.map(node => node.getBoundingClientRect());
+                const headerBottom = document.querySelector(".site-header")?.getBoundingClientRect().bottom || 0;
+                let active = 0;
+                rectangles.forEach((rect, index) => {
+                    const proportion = bounds.height > 0 ? Math.min(100, Math.max(0, (rect.top - bounds.top) / bounds.height * 100)) : 0;
+                    dots[index].style.setProperty("--section-position", `${proportion.toFixed(4)}%`);
+                    if (rect.top <= headerBottom + 24) active = index;
+                });
+                const pageHeight = document.documentElement.scrollHeight;
+                if (pageHeight > window.innerHeight && window.scrollY + window.innerHeight >= pageHeight - 2) active = dots.length - 1;
+                dots.forEach((dot, index) => {
+                    if (index === active) dot.setAttribute("aria-current", "location");
+                    else dot.removeAttribute("aria-current");
+                });
+            }
+            const schedule = () => { if (frame === null) frame = window.requestAnimationFrame(update); };
+            const observer = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : null;
+            function cleanup() {
+                events.abort(); observer?.disconnect();
+                if (frame !== null) { window.cancelAnimationFrame(frame); frame = null; }
+            }
+            clearSectionRail = cleanup;
+            observer?.observe(currentPreview);
+            window.addEventListener("resize", schedule, { signal: events.signal, passive: true });
+            window.addEventListener("scroll", schedule, { signal: events.signal, passive: true });
+            for (const type of ["hashchange", "bonk-account-change"]) window.addEventListener(type, cleanup, { signal: events.signal, once: true });
+            update();
+            schedule();
         }
 
         function watchBackgroundDismissal() {

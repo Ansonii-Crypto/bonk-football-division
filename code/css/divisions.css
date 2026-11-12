@@ -347,6 +347,56 @@ textarea.division-field {
     scrollbar-color: #567286 transparent;
 }
 
+.division-management-tools--view {
+    position: static;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    max-height: none;
+    margin-bottom: 1.4rem;
+    overflow: visible;
+}
+
+.division-management-tools--view .division-management-identity {
+    flex: 1 1 13rem;
+    min-width: 0;
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.division-management-tools--view .division-management-actions {
+    display: flex;
+    align-items: center;
+    flex: 3 1 42rem;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.division-management-tools--view .division-management-actions .division-button {
+    width: auto;
+    min-height: 2.25rem;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.75rem;
+}
+
+.division-management-tools--view :is(.division-page-actions, .division-settings-actions, .division-history-actions, .division-share-tools) {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-top: 0;
+    border-top: 0;
+}
+
+.division-management-tools--view .division-mode-switch {
+    flex: 0 0 auto;
+}
+
+.division-management-tools--view .division-share-fallback {
+    flex-basis: 100%;
+}
+
 .division-management-identity {
     padding-bottom: 1rem;
     border-bottom: 1px solid #3b5266;
@@ -425,17 +475,12 @@ textarea.division-field {
     padding: 0.5rem;
 }
 
-.division-navigation-tools {
+.division-share-tools {
     display: grid;
     gap: 0.6rem;
     min-width: 0;
     padding-top: 0.9rem;
     border-top: 1px solid #3b5266;
-}
-
-.division-outline {
-    text-overflow: ellipsis;
-    cursor: pointer;
 }
 
 .division-share-status,
@@ -482,11 +527,127 @@ textarea.division-field {
 }
 
 .division-workspace {
+    position: relative;
     min-width: 0;
 }
 
 .division-live-preview {
     min-width: 0;
+}
+
+.division-section-rail-slot {
+    position: absolute;
+    inset-block: 0;
+    right: calc(-1 * min(2.4rem, 4vw));
+    width: 2rem;
+    pointer-events: none;
+}
+
+.division-section-rail {
+    position: sticky;
+    top: 8rem;
+    z-index: 5;
+    width: 100%;
+    padding-block: 0.9rem;
+}
+
+.division-section-track {
+    position: relative;
+    height: min(60svh, 30rem, max(2rem, calc(100svh - 10.8rem)), max(2rem, calc(var(--section-content-height, 100svh) - 1.8rem)));
+    height: min(60dvh, 30rem, max(2rem, calc(100dvh - 10.8rem)), max(2rem, calc(var(--section-content-height, 100dvh) - 1.8rem)));
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.division-section-track::before {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(50% - 1px);
+    width: 2px;
+    background: #536c7c;
+    box-shadow: 0 0 0 1px rgb(8 12 20 / 60%);
+    content: "";
+}
+
+.division-section-dot {
+    position: absolute;
+    top: var(--section-position, 0%);
+    left: 50%;
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 1.8rem;
+    margin: 0;
+    padding: 0;
+    color: #d9f2ff;
+    background: transparent;
+    border: 0;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.division-section-dot::before {
+    width: 0.7rem;
+    height: 0.7rem;
+    background: #102030;
+    border: 2px solid #8fa7b8;
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px rgb(8 12 20 / 65%);
+    content: "";
+}
+
+.division-section-dot[data-pointer-near],
+.division-section-dot:focus-visible {
+    z-index: 2;
+}
+
+.division-section-dot[data-pointer-near]::before,
+.division-section-dot:focus-visible::before {
+    border-color: #d4f3ff;
+    background: #345b70;
+}
+
+.division-section-dot:focus-visible {
+    outline: 2px solid #c1edff;
+    outline-offset: 1px;
+}
+
+.division-section-dot[aria-current="location"]::before {
+    background: #a4e5fc;
+    border-color: #d6f6ff;
+    box-shadow: 0 0 0 3px #162b3b, 0 0 12px rgb(120 217 255 / 30%);
+}
+
+.division-section-label {
+    position: absolute;
+    top: 50%;
+    right: calc(100% + 0.3rem);
+    max-width: min(17rem, calc(100vw - 4rem));
+    padding: 0.4rem 0.6rem;
+    color: #e5f3fa;
+    background: rgb(8 17 26 / 95%);
+    border: 1px solid #577185;
+    border-radius: 0.4rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-50%);
+    transition: opacity 120ms ease;
+    pointer-events: none;
+}
+
+.division-section-dot[data-pointer-near] .division-section-label,
+.division-section-dot:focus-visible .division-section-label {
+    opacity: 1;
+    visibility: visible;
 }
 
 .division-tool-panel {
@@ -735,6 +896,12 @@ textarea.division-field {
     font-size: 0.85rem;
 }
 
+@media (min-width: 112rem) {
+    .division-event-container--managed {
+        margin-left: -17.9rem;
+    }
+}
+
 @media (max-width: 65rem) {
     .division-event-card {
         flex-basis: calc((100% - 1.25rem) / 2);
@@ -760,7 +927,7 @@ textarea.division-field {
 
     .division-mode-switch,
     .division-history-actions,
-    .division-navigation-tools,
+    .division-share-tools,
     .division-management-actions > .division-button,
     .division-tool-panel {
         grid-column: 1 / -1;
@@ -773,6 +940,21 @@ textarea.division-field {
 }
 
 @media (max-width: 48rem) {
+    .division-section-rail-slot {
+        right: -1.25rem;
+        width: 1.25rem;
+    }
+
+    .division-section-dot {
+        width: 1.25rem;
+        height: 1.7rem;
+    }
+
+    .division-section-dot::before {
+        width: 0.6rem;
+        height: 0.6rem;
+    }
+
     .division-live-preview {
         width: 100%;
     }
@@ -799,6 +981,10 @@ textarea.division-field {
 
 @media (prefers-reduced-motion: reduce) {
     .division-event-card {
+        transition: none;
+    }
+
+    .division-section-label {
         transition: none;
     }
 }
