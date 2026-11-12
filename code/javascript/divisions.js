@@ -241,10 +241,76 @@
         let notice;
         let saveButton;
         let publishButton;
+        let scrollRestoreRevision = 0;
+        let scrollAnchorLockRevision = 0;
+        let previousScrollAnchoring = null;
 
         function editable(key) { return model?.permissions?.editSections?.includes(key.startsWith("custom:") ? "custom" : key); }
         function customSection(key) { return draft.customSections?.find(item => `custom:${item.id}` === key); }
         function snapshot() { return { content: clone(draft), dirty, message }; }
+        function previewSections() { return [...(preview?.querySelectorAll(".division-view > [data-section]") || [])]; }
+        function editorScrollPosition() {
+            const nodes = previewSections();
+            const current = nodes.find(node => node.dataset.section === activeEditor?.key);
+            const headerBottom = document.querySelector(".site-header")?.getBoundingClientRect().bottom || 0;
+            const position = {
+                left: window.scrollX, top: window.scrollY, anchors: [],
+                toolsTop: container.querySelector(".division-management-tools")?.scrollTop || 0
+            };
+            const anchor = (node, edge = "top", replacementY) => {
+                if (!node) return;
+                position.anchors.push({ key: node.dataset.section || null, add: node.matches(".division-add-section"),
+                    edge, viewportY: replacementY ?? node.getBoundingClientRect()[edge] });
+            };
+            if (current) {
+                const rect = current.getBoundingClientRect();
+                const add = preview.querySelector(".division-add-section");
+                if (rect.top >= headerBottom) {
+                    anchor(current);
+                    // A cancelled new section is replaced by the Add section area.
+                    anchor(add, "top", rect.top);
+                } else {
+                    anchor(nodes[nodes.indexOf(current) + 1]);
+                    anchor(add);
+                    anchor(current, "bottom");
+                }
+            } else {
+                // Background settings resize the tools rather than the event itself.
+                anchor(nodes.find(node => node.getBoundingClientRect().bottom > headerBottom));
+            }
+            return position;
+        }
+        function paintAtScrollPosition(position) {
+            if (previousScrollAnchoring === null) previousScrollAnchoring = container.style.overflowAnchor;
+            const lockRevision = ++scrollAnchorLockRevision;
+            container.style.overflowAnchor = "none";
+            paint();
+            const revision = scrollRestoreRevision;
+            const restore = () => {
+                const nodes = previewSections();
+                let top = position.top;
+                for (const anchor of position.anchors) {
+                    const node = anchor.add ? preview.querySelector(".division-add-section") : nodes.find(node => node.dataset.section === anchor.key);
+                    if (!node) continue;
+                    top = window.scrollY + node.getBoundingClientRect()[anchor.edge] - anchor.viewportY;
+                    break;
+                }
+                const tools = container.querySelector(".division-management-tools");
+                if (tools) tools.scrollTop = position.toolsTop;
+                window.scrollTo({ left: position.left, top: Math.max(0, top), behavior: "instant" });
+            };
+            restore();
+            const restoredTop = window.scrollY;
+            const restoredLeft = window.scrollX;
+            window.requestAnimationFrame(() => {
+                if (section.isConnected && revision === scrollRestoreRevision
+                    && window.scrollY === restoredTop && window.scrollX === restoredLeft) restore();
+                if (lockRevision === scrollAnchorLockRevision) {
+                    container.style.overflowAnchor = previousScrollAnchoring;
+                    previousScrollAnchoring = null;
+                }
+            });
+        }
         function change() {
             editRevision += 1;
             dirty = true;
@@ -272,6 +338,7 @@
         }
         function paintPreview() {
             if (!preview) return;
+            scrollRestoreRevision += 1;
             applyBackground(backdrop, draft.appearance);
             section.classList.toggle("division-custom-background", !backdrop.hidden);
             preview.replaceChildren(window.DivisionView.render(draft, {
@@ -337,6 +404,7 @@
         }
         function cancelSection() {
             if (!activeEditor || pending) return;
+            const position = editorScrollPosition();
             const before = activeEditor.before;
             draft = clone(before.content);
             dirty = before.dirty;
@@ -344,7 +412,7 @@
             editRevision += 1;
             activeEditor = null;
             selected = "";
-            paint();
+            paintAtScrollPosition(position);
         }
         function renderInlineEditor() {
             const form = element("form", "division-inline-editor");
@@ -371,9 +439,10 @@
                 if (pending || !form.reportValidity()) return;
                 const current = activeEditor;
                 if (await save() && activeEditor === current) {
+                    const position = editorScrollPosition();
                     activeEditor = null;
                     selected = "";
-                    paint();
+                    paintAtScrollPosition(position);
                 }
             });
             return form;
@@ -443,6 +512,7 @@
             finally { pending = false; if (section.isConnected) paint(); }
         }
         function paint() {
+            scrollRestoreRevision += 1;
             container.replaceChildren();
             saveButton = null; publishButton = null; notice = null;
             editorFields = null; inlineStatus = null; inlineSave = null; inlineCancel = null; toolPanel = null;
