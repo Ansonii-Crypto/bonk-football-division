@@ -249,6 +249,8 @@
         let undoButton;
         let redoButton;
         let backgroundEvents = null;
+        let managementEvents = null;
+        let toolsOpen = false;
         let clearSectionRail = () => {};
 
         function editable(key) { return model?.permissions?.editSections?.includes(key.startsWith("custom:") ? "custom" : key); }
@@ -461,6 +463,7 @@
             pickerOpen = false;
             toolMode = "";
             activeEditor = { key, before, error: "" };
+            if (key === "appearance") toolsOpen = true;
             if (position) paintAtScrollPosition(position);
             else paint();
         }
@@ -581,13 +584,22 @@
             saveButton = null; publishButton = null; notice = null;
             undoButton = null; redoButton = null;
             editorFields = null; inlineStatus = null; inlineSave = null; inlineCancel = null; toolPanel = null;
-            const showSidebar = Boolean(model.permissions?.editSections?.length && (editing || toolMode));
-            container.classList.toggle("division-event-container--managed", showSidebar);
+            container.classList.toggle("division-event-container--managed", Boolean(model.permissions?.editSections?.length));
             if (model.permissions?.editSections?.length) {
-                const toolbar = element("aside", `division-management-bar division-management-tools${showSidebar ? "" : " division-management-tools--view"}`);
+                const slot = element("div", `division-management-slot${toolsOpen ? " is-open" : ""}`);
+                const dock = element("div", "division-management-dock");
+                const toggle = button("Tools", () => setToolsOpen(!toolsOpen), "division-management-toggle");
+                toggle.setAttribute("aria-expanded", String(toolsOpen));
+                toggle.setAttribute("aria-controls", "division-management-tools");
+                toggle.setAttribute("aria-label", `${toolsOpen ? "Close" : "Open"} division management tools`);
+                const toolbar = element("aside", "division-management-bar division-management-tools");
+                toolbar.id = "division-management-tools";
                 toolbar.setAttribute("aria-label", "Division management tools");
                 const identity = element("div", "division-management-identity");
-                identity.append(element("strong", "", roleNames[model.role] || "Division management"));
+                const heading = element("div", "division-management-heading");
+                heading.append(element("strong", "", roleNames[model.role] || "Division management"),
+                    button("Close tools", () => setToolsOpen(false, true), "division-management-close"));
+                identity.append(heading);
                 notice = element("p", "division-message"); notice.setAttribute("role", "status"); identity.append(notice);
                 const actions = element("div", "division-management-actions");
                 const modes = element("div", "division-mode-switch");
@@ -612,6 +624,7 @@
                 if (model.permissions.manageMembers) settings.append(button("Management roles", () => {
                     const position = activeEditor?.key === "appearance" ? editorScrollPosition() : null;
                     parkBackground(); toolMode = toolMode === "members" ? "" : "members"; pickerOpen = false;
+                    toolsOpen = true;
                     if (position) paintAtScrollPosition(position); else paint();
                 }));
                 const history = element("div", "division-history-actions");
@@ -634,7 +647,7 @@
                     }
                     settings.after(toolPanel);
                 }
-                container.append(toolbar);
+                dock.append(toggle, toolbar); slot.append(dock); container.append(slot);
             }
             const workspace = element("div", `division-workspace${editing ? " is-editing" : ""}`);
             preview = element("div", "division-live-preview"); workspace.append(preview);
@@ -643,6 +656,37 @@
             if (activeEditor?.key === "appearance") toolPanel.append(renderInlineEditor());
             updateNotice();
             watchBackgroundDismissal();
+            watchManagementDismissal();
+        }
+
+        function setToolsOpen(value, focusToggle = false) {
+            toolsOpen = value;
+            const slot = container.querySelector(".division-management-slot");
+            const toggle = slot?.querySelector(".division-management-toggle");
+            slot?.classList.toggle("is-open", value);
+            toggle?.setAttribute("aria-expanded", String(value));
+            toggle?.setAttribute("aria-label", `${value ? "Close" : "Open"} division management tools`);
+            if (focusToggle && toggle && getComputedStyle(toggle).display !== "none") toggle.focus({ preventScroll: true });
+            watchManagementDismissal();
+        }
+
+        function watchManagementDismissal() {
+            managementEvents?.abort();
+            if (!toolsOpen) return;
+            const events = new AbortController();
+            managementEvents = events;
+            document.addEventListener("click", event => {
+                if (!section.isConnected) { events.abort(); return; }
+                if (!(event.target instanceof Element) || event.target.closest(".division-management-slot")) return;
+                setToolsOpen(false);
+            }, { signal: events.signal });
+            document.addEventListener("keydown", event => {
+                if (!section.isConnected) { events.abort(); return; }
+                if (event.key !== "Escape" || event.defaultPrevented || activeEditor?.key === "appearance") return;
+                event.preventDefault();
+                setToolsOpen(false, true);
+            }, { signal: events.signal });
+            for (const type of ["hashchange", "bonk-account-change"]) window.addEventListener(type, () => events.abort(), { signal: events.signal, once: true });
         }
 
         function setMode(value) {
@@ -735,6 +779,7 @@
                 frame = null;
                 if (!section.isConnected || preview !== currentPreview) { cleanup(); return; }
                 const bounds = currentPreview.getBoundingClientRect();
+                container.style.setProperty("--division-content-height", `${bounds.height}px`);
                 track.style.setProperty("--section-content-height", `${bounds.height}px`);
                 const rectangles = nodes.map(node => node.getBoundingClientRect());
                 const headerBottom = document.querySelector(".site-header")?.getBoundingClientRect().bottom || 0;
@@ -774,7 +819,7 @@
             document.addEventListener("click", event => {
                 if (!section.isConnected) { events.abort(); return; }
                 if (pending || !(event.target instanceof Element)) return;
-                if (event.target.closest(".division-tool-panel, .division-management-actions")) return;
+                if (event.target.closest(".division-management-slot")) return;
                 closeBackground();
             }, { signal: events.signal });
             document.addEventListener("keydown", event => {
@@ -782,7 +827,9 @@
                 if (event.key !== "Escape" || pending) return;
                 event.preventDefault();
                 closeBackground();
-                [...container.querySelectorAll("button")].find(node => node.textContent === "Background")?.focus({ preventScroll: true });
+                const background = [...container.querySelectorAll("button")].find(node => node.textContent === "Background");
+                const focusTarget = background?.getClientRects().length ? background : container.querySelector(".division-management-toggle");
+                focusTarget?.focus({ preventScroll: true });
             }, { signal: events.signal });
             for (const type of ["hashchange", "bonk-account-change"]) window.addEventListener(type, () => events.abort(), { once: true, signal: events.signal });
         }

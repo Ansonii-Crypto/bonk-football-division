@@ -556,21 +556,92 @@ test("a saved section can be undone and saved again without publishing the rever
     assert.equal(model.publishedAt, null);
 });
 
-test("division management opens in a full-width view and reserves the sidebar for editing", async t => {
+test("division management stays in a left dock in both View and Edit modes", async t => {
     const model = { ...modelFor(), role: "editor", permissions: { ...permissions, publish: false, manageMembers: false, editSections: ["general", "appearance", "campaigns", "custom"] } };
     const window = await page(t, async path => {
         assert.equal(path, "/api/manage/divisions/1");
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    assert.equal(document.querySelector(".division-event-container--managed"), null);
-    assert.ok(document.querySelector(".division-management-tools--view"), "management controls use the compact view layout");
+    const docked = () => {
+        const container = document.querySelector(".division-event-container--managed");
+        assert.ok(container);
+        const slot = container.querySelector(":scope > .division-management-slot");
+        assert.ok(slot, "the tools occupy their own left slot beside the event");
+        assert.ok(slot.querySelector(".division-management-dock > .division-management-tools"));
+        assert.equal(container.querySelectorAll(".division-management-tools").length, 1);
+        assert.equal(document.querySelector(".division-management-tools--view"), null, "View does not move tools above the event");
+        assert.ok(container.querySelector(":scope > .division-workspace"));
+        assert.equal(slot.querySelector(".division-workspace"), null, "event content stays separate from the tools");
+    };
+    docked();
     button(window, "Edit").click();
-    assert.ok(document.querySelector(".division-event-container--managed"));
-    assert.equal(document.querySelector(".division-management-tools--view"), null);
+    docked();
     button(window, "View").click();
-    assert.equal(document.querySelector(".division-event-container--managed"), null);
-    assert.ok(document.querySelector(".division-management-tools--view"));
+    docked();
+});
+
+test("opening and closing the management dock keeps unfinished edits without writing or replacing fields", async t => {
+    const model = modelFor();
+    let writes = 0;
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") writes += 1;
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    const slot = () => document.querySelector(".division-management-slot");
+    const toggle = () => document.querySelector(".division-management-toggle");
+    assert.ok(toggle(), "narrow screens have a management-tools toggle");
+    assert.equal(toggle().getAttribute("aria-expanded"), "false");
+    toggle().click();
+    assert.equal(toggle().getAttribute("aria-expanded"), "true");
+    assert.equal(slot().classList.contains("is-open"), true);
+    button(window, "Edit").click();
+    assert.equal(toggle().getAttribute("aria-expanded"), "true", "mode changes preserve the dock's open state");
+    const editor = editSection(window);
+    const description = field(window, "About this event");
+    input(window, description, "Work in progress that must survive closing the tools");
+    button(window, "Close tools").click();
+    assert.equal(toggle().getAttribute("aria-expanded"), "false");
+    assert.equal(slot().classList.contains("is-open"), false);
+    assert.equal(document.querySelector(".division-inline-editor"), editor);
+    assert.equal(field(window, "About this event"), description);
+    assert.equal(description.value, "Work in progress that must survive closing the tools");
+    toggle().click();
+    assert.equal(toggle().getAttribute("aria-expanded"), "true");
+    assert.equal(field(window, "About this event"), description);
+    assert.equal(writes, 0, "opening and closing tools does not save or publish the draft");
+});
+
+test("Escape closes Background first and then closes the management dock without discarding its changes", async t => {
+    const model = modelFor();
+    let writes = 0;
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") writes += 1;
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    document.querySelector(".division-management-toggle").click();
+    button(window, "Background").click();
+    const colour = field(window, "Background colour");
+    input(window, colour, "#407159");
+    colour.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert.equal(document.querySelector(".division-inline-editor"), null, "the first Escape dismisses Background");
+    assert.equal(document.querySelector(".division-management-toggle").getAttribute("aria-expanded"), "true", "Background dismissal leaves management tools available");
+    assert.equal(document.querySelector(".division-page-background").style.backgroundColor, "rgb(64, 113, 89)");
+    document.querySelector(".division-management-toggle").dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert.equal(document.querySelector(".division-management-toggle").getAttribute("aria-expanded"), "false");
+    assert.equal(document.querySelector(".division-management-slot").classList.contains("is-open"), false);
+    assert.equal(document.querySelector(".division-page-background").style.backgroundColor, "rgb(64, 113, 89)");
+    assert.equal(button(window, "Save draft").disabled, false);
+    button(window, "Background").click();
+    button(window, "Close tools").click();
+    document.body.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert.equal(document.querySelector(".division-inline-editor"), null);
+    assert.equal(document.activeElement, document.querySelector(".division-management-toggle"), "Escape returns focus to the visible toggle when tools were collapsed");
+    assert.equal(writes, 0);
 });
 
 test("the section rail navigates visible sections outside the management tools without changing the route or content", async t => {
@@ -619,6 +690,7 @@ test("public division readers have the same visible section navigation without m
     }, "#divisions/2", null);
     const { document } = window;
     assert.equal(document.querySelector(".division-management-tools"), null);
+    assert.equal(document.querySelector(".division-management-slot"), null);
     assert.equal(document.querySelector(".division-event-container--managed"), null);
     assert.deepEqual([...document.querySelectorAll(".division-section-dot")].map(dot => dot.dataset.sectionTarget), ["general", "timeline", "custom:rules"]);
     const scrolled = [];
