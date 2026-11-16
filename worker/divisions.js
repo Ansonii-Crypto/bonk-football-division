@@ -38,6 +38,10 @@ function sectionOrder(content) {
     const builtIn = OPTIONAL_SECTIONS.filter(key => key === "participation"
         || key === "bracket" && content.teams?.length >= 2
         || key !== "bracket" && Array.isArray(content[key]) && content[key].length > 0);
+    if (["live", "completed"].includes(content.status) && builtIn.includes("bracket")) {
+        builtIn.splice(builtIn.indexOf("bracket"), 1);
+        builtIn.unshift("bracket");
+    }
     return [...builtIn, ...customSections(content).map(section => `custom:${section.id}`)];
 }
 
@@ -262,6 +266,9 @@ function summary(row, managed = false) {
     const content = JSON.parse(managed ? row.draft_json : row.published_json);
     const data = { id: row.id, name: content.name, summary: content.summary, status: content.status,
         appearance: appearance(content),
+        participation: { mode: content.participation?.mode ?? "solo", teamSize: content.participation?.teamSize ?? 1,
+            registration: content.participation?.registration ?? "closed" },
+        entrantCount: Array.isArray(content.teams) ? content.teams.length : 0,
         startDate: content.startDate, endDate: content.endDate, publishedAt: row.published_at,
         updatedAt: managed ? row.updated_at : row.published_at };
     if (managed) {
@@ -294,17 +301,46 @@ async function listDivisions(env, url, account, managed, json) {
     if (!page || !limit) {
         return json({ error: "Choose a valid division page and page size." }, 400);
     }
+    const status = url.searchParams.get("status") ?? "all";
+    const publication = url.searchParams.get("publication") ?? "all";
+    if (!managed && !["all", "live", "upcoming", "registration", "completed"].includes(status)) {
+        return json({ error: "Choose a valid event status." }, 400);
+    }
+    if (managed && !["all", "drafts"].includes(publication)) {
+        return json({ error: "Choose all managed divisions or drafts." }, 400);
+    }
     const scoped = managed && !account.isAdmin;
     const from = scoped ? "divisions d JOIN division_members m ON d.id = m.division_id" : "divisions d";
-    const where = scoped ? "WHERE m.bonk_id = ?" : managed ? "" : "WHERE d.published_json IS NOT NULL";
-    const bindings = scoped ? [account.bonkId] : [];
+    const conditions = [];
+    const bindings = [];
+    const publicStatus = "json_extract(d.published_json, '$.status')";
+    if (scoped) {
+        conditions.push("m.bonk_id = ?");
+        bindings.push(account.bonkId);
+    }
+    if (!managed) {
+        conditions.push("d.published_json IS NOT NULL");
+        if (status === "upcoming") {
+            conditions.push(`${publicStatus} IN ('upcoming', 'registration')`);
+        } else if (status !== "all") {
+            conditions.push(`${publicStatus} = ?`);
+            bindings.push(status);
+        }
+    } else if (publication === "drafts") {
+        conditions.push("(d.published_json IS NULL OR d.published_version IS NULL OR d.version != d.published_version)");
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const count = await env.DB.prepare(`SELECT COUNT(*) AS total FROM ${from} ${where}`).bind(...bindings).first();
     const total = count?.total || 0;
     const pages = Math.max(1, Math.ceil(total / limit));
     const actualPage = Math.min(page, pages);
     const roleColumn = scoped ? "m.role" : "'site-admin' AS role";
-    const order = managed ? "d.updated_at" : "d.published_at";
-    const rows = await env.DB.prepare(`SELECT d.*, ${roleColumn} FROM ${from} ${where} ORDER BY ${order} DESC, d.id DESC LIMIT ? OFFSET ?`)
+    const order = managed ? "d.updated_at DESC, d.id DESC" : `CASE ${publicStatus}
+        WHEN 'live' THEN 0 WHEN 'upcoming' THEN 1 WHEN 'registration' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END ASC,
+        CASE WHEN ${publicStatus} IN ('upcoming', 'registration')
+            THEN COALESCE(NULLIF(json_extract(d.published_json, '$.startDate'), ''), '9999-12-31') END ASC,
+        d.published_at DESC, d.id DESC`;
+    const rows = await env.DB.prepare(`SELECT d.*, ${roleColumn} FROM ${from} ${where} ORDER BY ${order} LIMIT ? OFFSET ?`)
         .bind(...bindings, limit, (actualPage - 1) * limit).all();
     return json({ divisions: rows.results.map(row => summary(row, managed)), total, pages, page: actualPage });
 }

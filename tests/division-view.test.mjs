@@ -155,3 +155,73 @@ test("custom text sections follow saved order, use safe text and keep Add sectio
     const publicView = DivisionView.render(content);
     assert.equal(publicView.querySelector(".division-section-actions, .division-add-section"), null);
 });
+
+test("event banners use validated appearance and show event facts before the description", t => {
+    const { DivisionView } = preview(t);
+    const content = {
+        name: "Football Cup", summary: "Opening weekend", description: "Tournament information",
+        startDate: "2026-11-21", endDate: "2026-11-22", sectionOrder: [],
+        participation: { mode: "teams", teamSize: 4, registration: "invite-only" },
+        appearance: { backgroundColor: "#254b62", backgroundImage: "https://example.com/football.jpg" }
+    };
+    const rendered = DivisionView.render(content, { editing: true, editableSections: ["general"] });
+    const hero = rendered.querySelector(":scope > [data-section='general']");
+    const cover = hero.querySelector(":scope > .division-event-cover");
+    assert.equal(cover.getAttribute("aria-hidden"), "true");
+    assert.equal(cover.style.getPropertyValue("--division-cover-colour"), "#254b62");
+    assert.match(cover.style.getPropertyValue("--division-cover-image"), /^url\("https:\/\/example\.com\/football\.jpg"\)$/);
+    assert.ok(cover.classList.contains("division-cover--image"));
+    const overview = hero.querySelector(".division-event-overview");
+    assert.ok(overview.querySelector(".division-section-edit"), "event controls remain within the readable overview");
+    const facts = overview.querySelector(".division-event-facts");
+    assert.deepEqual([...facts.querySelectorAll("dt")].map(node => node.textContent), ["Dates", "Match format", "Registration"]);
+    assert.match(facts.textContent, /21 November 2026 — 22 November 2026/);
+    assert.match(facts.textContent, /4 vs 4 · Team entry/);
+    assert.match(facts.textContent, /By invitation/);
+    assert.ok([...overview.children].indexOf(facts) < [...overview.children].indexOf(overview.querySelector(".division-event-description")));
+
+    for (const backgroundImage of ["http://example.com/image.jpg", "javascript:alert(1)", "data:image/svg+xml,<svg/>", "https://user:password@example.com/image.jpg"]) {
+        const unsafe = DivisionView.render({ ...content, appearance: { backgroundColor: "red; background: url(https://example.com)", backgroundImage } });
+        const fallback = unsafe.querySelector(".division-event-cover");
+        assert.equal(fallback.style.getPropertyValue("--division-cover-colour"), "");
+        assert.equal(fallback.style.getPropertyValue("--division-cover-image"), "");
+        assert.equal(fallback.classList.contains("division-cover--custom"), false);
+    }
+});
+
+test("live legacy events lead with the bracket while saved section layouts stay exact", t => {
+    const { DivisionView } = preview(t);
+    const content = {
+        name: "Cup", status: "live", teams: teams(4), participation: { mode: "teams", teamSize: 4 },
+        timeline: [{ title: "Opening round" }], campaigns: [], referendums: []
+    };
+    assert.deepEqual(Array.from(DivisionView.sectionOrder(content)), ["bracket", "participation", "timeline", "teams"]);
+    assert.deepEqual([...DivisionView.render(content).children].map(node => node.dataset.section), ["general", "bracket", "participation", "timeline", "teams"]);
+    assert.deepEqual(Array.from(DivisionView.sectionOrder({ ...content, status: "completed" })), ["bracket", "participation", "timeline", "teams"]);
+    assert.deepEqual(Array.from(DivisionView.sectionOrder({ ...content, status: "upcoming" })), ["participation", "timeline", "teams", "bracket"]);
+    assert.deepEqual(Array.from(DivisionView.sectionOrder({ ...content, sectionOrder: ["timeline", "teams", "bracket"] })), ["timeline", "teams", "bracket"]);
+    assert.deepEqual(Array.from(DivisionView.sectionOrder({ ...content, sectionOrder: [] })), []);
+});
+
+test("edit insertion points identify the section they follow and stay hidden from readers", t => {
+    const { DivisionView } = preview(t);
+    const content = {
+        name: "Cup", sectionOrder: ["timeline", "custom:rules"], participation: { teamSize: 1 },
+        timeline: [{ title: "Opening round" }], teams: [], campaigns: [], referendums: [],
+        customSections: [{ id: "rules", title: "Match rules", description: "Play fair" }]
+    };
+    const inserted = [];
+    const editView = DivisionView.render(content, { editing: true, editableSections: ["custom"], onAddSection: key => inserted.push(key) });
+    const controls = [...editView.querySelectorAll(".division-section-insert, .division-add-section")];
+    assert.deepEqual(controls.map(node => node.dataset.afterSection), ["general", "timeline", "custom:rules"]);
+    controls.forEach(node => {
+        assert.equal(node.previousElementSibling.dataset.section, node.dataset.afterSection);
+        assert.match(node.getAttribute("aria-label"), /^Add section after /);
+        node.click();
+    });
+    assert.deepEqual(inserted, ["general", "timeline", "custom:rules"]);
+    assert.equal(editView.querySelectorAll(".division-add-section").length, 1, "the final full-size insertion area remains unique");
+    assert.equal(DivisionView.render(content).querySelector(".division-section-insert, .division-add-section"), null);
+    const restricted = DivisionView.render(content, { editing: true, editableSections: ["general"], onAddSection() {} });
+    assert.equal(restricted.querySelector(".division-section-insert, .division-add-section"), null);
+});

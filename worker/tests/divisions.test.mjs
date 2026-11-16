@@ -93,6 +93,12 @@ async function save(env, cookie, division, changes) {
     return (await response.json()).division;
 }
 
+async function publish(env, cookie, division) {
+    const response = await request(env, `/api/manage/divisions/${division.id}/publish`, { version: division.version }, { cookie });
+    assert.equal(response.status, 200, await response.clone().text());
+    return (await response.json()).division;
+}
+
 test("division drafts are private and publication preserves a separate public snapshot", async t => {
     const env = environment(t);
     const admin = await signIn(env);
@@ -344,6 +350,48 @@ test("division section order is validated, retained in drafts, and published sep
         ["participation", "timeline", "teams", "bracket", "campaigns"]);
 });
 
+test("legacy event order prioritises live brackets without changing stored or manually arranged content", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    const division = await create(env, admin);
+    const legacy = {
+        ...division.content,
+        timeline: [{ id: "opening", title: "Opening match", date: "2026-11-21", description: "" }],
+        teams: ["blue", "red"].map(id => ({ id, name: id, players: [{ username: id, bonkId: null }] })),
+        campaigns: [{ id: "welcome", title: "Welcome", description: "" }],
+        customSections: [{ id: "rules", title: "Rules", description: "Play fair." }]
+    };
+    delete legacy.sectionOrder;
+    const stored = content => {
+        const serialized = JSON.stringify(content);
+        env.db.prepare("UPDATE divisions SET draft_json = ?, published_json = ?, published_version = version, published_at = 1000 WHERE id = ?")
+            .run(serialized, serialized, division.id);
+        return serialized;
+    };
+    async function orders() {
+        const publicView = (await (await request(env, `/api/divisions/${division.id}`)).json()).division;
+        const managedView = (await (await request(env, `/api/manage/divisions/${division.id}`, undefined, { cookie: admin })).json()).division;
+        return [publicView.content.sectionOrder, managedView.content.sectionOrder];
+    }
+    for (const status of ["upcoming", "registration", "live", "completed"]) {
+        const serialized = stored({ ...legacy, status });
+        const expected = ["live", "completed"].includes(status)
+            ? ["bracket", "participation", "timeline", "teams", "campaigns", "custom:rules"]
+            : ["participation", "timeline", "teams", "bracket", "campaigns", "custom:rules"];
+        for (const order of await orders()) assert.deepEqual(order, expected);
+        const row = env.db.prepare("SELECT draft_json, published_json FROM divisions WHERE id = ?").get(division.id);
+        assert.equal(row.draft_json, serialized);
+        assert.equal(row.published_json, serialized, "reading an older event does not rewrite either stored snapshot");
+    }
+    for (const sectionOrder of [[], ["campaigns", "timeline", "bracket", "participation"]]) {
+        stored({ ...legacy, status: "live", sectionOrder });
+        for (const order of await orders()) assert.deepEqual(order, sectionOrder, "an explicit saved order is preserved");
+    }
+    stored({ ...legacy, status: "live", teams: legacy.teams.slice(0, 1) });
+    for (const order of await orders()) assert.deepEqual(order, ["participation", "timeline", "teams", "campaigns", "custom:rules"],
+        "a legacy event still needs two entrants before a bracket is included");
+});
+
 test("editors can arrange their own sections without hiding or reordering restricted sections", async t => {
     const env = environment(t);
     const admin = await signIn(env);
@@ -419,4 +467,128 @@ test("custom sections have validated references and remain scoped editable conte
     }, { cookie: admin, method: "PUT" });
     assert.equal(legacyResponse.status, 200);
     assert.deepEqual((await legacyResponse.json()).division.content.sectionOrder, ["participation", "custom:rules"]);
+});
+
+test("published event status filters paginate the public snapshot and prioritise live and upcoming events", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    async function event(name, status, startDate, publishedAt) {
+        let division = await create(env, admin, name);
+        division = await save(env, admin, division, { status, startDate });
+        division = await publish(env, admin, division);
+        env.db.prepare("UPDATE divisions SET published_at = ? WHERE id = ?").run(publishedAt, division.id);
+        return division;
+    }
+    const later = await event("Upcoming later", "upcoming", "2026-12-20", 5000);
+    const completedOlder = await event("Completed older", "completed", "2026-10-01", 1000);
+    let live = await event("Live cup", "live", "2026-11-01", 2000);
+    const registration = await event("Registration first", "registration", "2026-12-01", 3000);
+    const undated = await event("Upcoming undated", "upcoming", "", 9000);
+    const tieA = await event("Upcoming tie A", "upcoming", "2026-12-10", 4000);
+    const tieB = await event("Upcoming tie B", "upcoming", "2026-12-10", 4000);
+    const completedRecent = await event("Completed recent", "completed", "2026-10-02", 8000);
+    const hidden = await create(env, admin, "Private live event");
+    await save(env, admin, hidden, { status: "live" });
+    live = await save(env, admin, live, { name: "Unpublished renamed event", status: "completed" });
+
+    const all = await (await request(env, "/api/divisions?status=all")).json();
+    assert.equal(all.total, 8);
+    assert.deepEqual(all.divisions.map(division => division.id),
+        [live.id, registration.id, tieB.id, tieA.id, later.id, undated.id, completedRecent.id, completedOlder.id]);
+    assert.equal(all.divisions[0].name, "Live cup", "draft names and statuses do not affect the public listing");
+    const paged = await (await request(env, "/api/divisions?limit=3&page=2")).json();
+    assert.equal(paged.total, 8);
+    assert.equal(paged.pages, 3);
+    assert.deepEqual(paged.divisions.map(division => division.id), [tieA.id, later.id, undated.id]);
+    const upcoming = await (await request(env, "/api/divisions?status=upcoming&limit=2&page=2")).json();
+    assert.equal(upcoming.total, 5);
+    assert.equal(upcoming.pages, 3);
+    assert.equal(upcoming.page, 2);
+    assert.deepEqual(upcoming.divisions.map(division => division.id), [tieA.id, later.id]);
+    const registrations = await (await request(env, "/api/divisions?status=registration")).json();
+    assert.equal(registrations.total, 1);
+    assert.equal(registrations.divisions[0].id, registration.id);
+    const liveOnly = await (await request(env, "/api/divisions?status=live")).json();
+    assert.equal(liveOnly.total, 1);
+    assert.equal(liveOnly.divisions[0].id, live.id);
+    const completed = await (await request(env, "/api/divisions?status=completed")).json();
+    assert.deepEqual(completed.divisions.map(division => division.id), [completedRecent.id, completedOlder.id]);
+    const clamped = await (await request(env, "/api/divisions?status=registration&page=999")).json();
+    assert.equal(clamped.page, 1);
+    for (const status of ["unknown", "", "live' OR 1=1"]) {
+        assert.equal((await request(env, `/api/divisions?status=${encodeURIComponent(status)}`)).status, 400);
+    }
+});
+
+test("showcase metadata uses the same public or private snapshot without exposing player identities", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    let division = await create(env, admin);
+    const teams = ["blue", "red", "green"].map((id, index) => ({ id, name: `${id} team`, players: [{ username: `${id} player`, bonkId: String(3177088 + index) }] }));
+    division = await save(env, admin, division, {
+        participation: { mode: "teams", teamSize: 4, registration: "open", description: "Published participation details" },
+        teams: teams.slice(0, 2)
+    });
+    division = await publish(env, admin, division);
+    division = await save(env, admin, division, {
+        participation: { mode: "teams", teamSize: 2, registration: "invite-only", description: "Private participation details" },
+        teams
+    });
+    const publicSummary = (await (await request(env, "/api/divisions")).json()).divisions[0];
+    const privateSummary = (await (await request(env, "/api/manage/divisions", undefined, { cookie: admin })).json()).divisions[0];
+    assert.deepEqual(publicSummary.participation, { mode: "teams", teamSize: 4, registration: "open" });
+    assert.equal(publicSummary.entrantCount, 2);
+    assert.deepEqual(privateSummary.participation, { mode: "teams", teamSize: 2, registration: "invite-only" });
+    assert.equal(privateSummary.entrantCount, 3);
+    for (const summary of [publicSummary, privateSummary]) {
+        assert.equal(summary.teams, undefined);
+        assert.equal(summary.participation.description, undefined);
+        assert.doesNotMatch(JSON.stringify(summary), /3177088|blue player|red player|green player|bonkId/);
+    }
+    assert.equal(publicSummary.version, undefined);
+    assert.equal(publicSummary.permissions, undefined);
+});
+
+test("draft filtering keeps unpublished changes paged and scoped to the manager's own divisions", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    const editor = await signIn(env, 1001, "Editor");
+    const unrelated = await signIn(env, 1002, "Unrelated");
+    const assignedDraft = await create(env, admin, "Assigned private draft");
+    const otherDraft = await create(env, admin, "Other private draft");
+    let clean = await create(env, admin, "Clean published event");
+    let changed = await create(env, admin, "Published event with a draft");
+    await grant(env, admin, assignedDraft.id, "1001", "editor");
+    await grant(env, admin, clean.id, "1001", "editor");
+    await grant(env, admin, changed.id, "1001", "editor");
+    clean = await publish(env, admin, clean);
+    changed = await publish(env, admin, changed);
+    changed = await save(env, editor, changed, { description: "An unpublished edit" });
+    for (const [id, timestamp] of [[assignedDraft.id, 1000], [otherDraft.id, 2000], [changed.id, 3000]]) {
+        env.db.prepare("UPDATE divisions SET updated_at = ? WHERE id = ?").run(timestamp, id);
+    }
+    const all = await (await request(env, "/api/manage/divisions?publication=all", undefined, { cookie: admin })).json();
+    assert.equal(all.total, 4);
+    const adminDrafts = await (await request(env, "/api/manage/divisions?publication=drafts", undefined, { cookie: admin })).json();
+    assert.equal(adminDrafts.total, 3);
+    assert.deepEqual(adminDrafts.divisions.map(division => division.id), [changed.id, otherDraft.id, assignedDraft.id]);
+    const first = await (await request(env, "/api/manage/divisions?publication=drafts&limit=1", undefined, { cookie: editor })).json();
+    assert.equal(first.total, 2);
+    assert.equal(first.pages, 2);
+    assert.equal(first.divisions[0].id, changed.id);
+    assert.equal(first.divisions[0].role, "editor");
+    const second = await (await request(env, "/api/manage/divisions?publication=drafts&limit=1&page=2", undefined, { cookie: editor })).json();
+    assert.equal(second.divisions[0].id, assignedDraft.id);
+    const noAccess = await (await request(env, "/api/manage/divisions?publication=drafts", undefined, { cookie: unrelated })).json();
+    assert.equal(noAccess.total, 0);
+    assert.equal((await request(env, "/api/manage/divisions?publication=drafts")).status, 401);
+    assert.equal((await request(env, "/api/manage/divisions?publication=unknown", undefined, { cookie: admin })).status, 400);
+    changed = await publish(env, admin, changed);
+    assert.equal((await (await request(env, "/api/manage/divisions?publication=drafts", undefined, { cookie: editor })).json()).total, 1,
+        "publishing an edit removes it from the manager's draft list");
+    assert.equal((await request(env, `/api/manage/divisions/${clean.id}/unpublish`, { version: clean.version }, { cookie: admin })).status, 200);
+    const afterUnpublish = await (await request(env, "/api/manage/divisions?publication=drafts", undefined, { cookie: editor })).json();
+    assert.equal(afterUnpublish.total, 2, "an unpublished event returns to the draft list");
+    const publicList = await (await request(env, "/api/divisions?publication=drafts")).json();
+    assert.deepEqual(publicList.divisions.map(division => division.id), [changed.id], "public query parameters cannot expose private drafts");
 });

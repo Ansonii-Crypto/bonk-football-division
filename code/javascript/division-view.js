@@ -19,6 +19,9 @@
         if (content.campaigns?.length) order.push("campaigns");
         if (content.referendums?.length) order.push("referendums");
         order.push(...custom);
+        if (["live", "completed"].includes(content.status) && order.includes("bracket")) {
+            return ["bracket", ...order.filter(key => key !== "bracket")];
+        }
         return order;
     }
 
@@ -116,8 +119,30 @@
         return value;
     }
 
+    function eventCover(appearance = {}) {
+        const cover = element("div", "division-event-cover division-cover");
+        cover.setAttribute("aria-hidden", "true");
+        appearance = appearance && typeof appearance === "object" ? appearance : {};
+        const colour = /^#[0-9a-f]{6}$/i.test(appearance.backgroundColor || "") ? appearance.backgroundColor : "";
+        if (colour) {
+            cover.style.setProperty("--division-cover-colour", colour);
+            cover.classList.add("division-cover--custom");
+        }
+        try {
+            const image = new URL(appearance.backgroundImage);
+            if (image.protocol === "https:" && !image.username && !image.password) {
+                cover.style.setProperty("--division-cover-image", `url(${JSON.stringify(image.href)})`);
+                cover.classList.add("division-cover--custom", "division-cover--image");
+            }
+        } catch {
+            // Invalid or missing image links use the shared pitch cover.
+        }
+        return cover;
+    }
+
     function render(content = {}, options = {}) {
         const page = element("div", "division-view");
+        page.classList.toggle("division-view--editing", Boolean(options.editing));
         const allowed = options.editableSections ? new Set(options.editableSections) : null;
         const canEdit = key => Boolean(options.editing && (!allowed || allowed.has(key.startsWith("custom:") ? "custom" : key)));
         const hasText = value => typeof value === "string" && value.trim().length > 0;
@@ -177,29 +202,41 @@
         }
 
         const general = section("general", "", true, true);
+        const overview = element("div", "division-event-overview");
+        const controls = general.querySelector(".division-section-heading");
+        if (controls) overview.append(controls);
+        general.append(eventCover(content.appearance), overview);
         const top = element("div", "division-event-eyebrow");
         top.append(element("span", `division-event-status division-event-status--${Object.hasOwn(statusNames, content.status) ? content.status : "upcoming"}`,
             statusNames[content.status] || "Upcoming"), element("span", "", "Bonk.io football"));
-        general.append(top, element("h1", "division-event-title", content.name || "Untitled division"));
+        overview.append(top, element("h1", "division-event-title", content.name || "Untitled division"));
         if (hasText(content.summary)) {
-            general.append(element("p", "division-event-summary", content.summary));
+            overview.append(element("p", "division-event-summary", content.summary));
         } else if (options.editing) {
-            general.append(element("p", "division-edit-prompt", "Add a short introduction to your event."));
+            overview.append(element("p", "division-edit-prompt", "Add a short introduction to your event."));
         }
-        if (content.startDate || content.endDate) {
-            const dates = element("p", "division-event-dates", content.startDate && content.endDate
-                ? `${dateLabel(content.startDate)} — ${dateLabel(content.endDate)}`
-                : dateLabel(content.startDate || content.endDate));
-            general.append(dates);
+        const participation = content.participation || {};
+        const teamSize = Math.max(1, Math.min(4, Number(participation.teamSize) || 1));
+        const facts = element("dl", "division-event-facts");
+        const dates = content.startDate && content.endDate && content.startDate !== content.endDate
+            ? `${dateLabel(content.startDate)} — ${dateLabel(content.endDate)}`
+            : dateLabel(content.startDate || content.endDate);
+        for (const [label, value] of [
+            ["Dates", dates],
+            ["Match format", `${teamSize} vs ${teamSize} · ${participation.mode === "teams" ? "Team entry" : "Individual entry"}`],
+            ["Registration", registrationNames[participation.registration] || "Details to be announced"]
+        ]) {
+            const fact = element("div", "division-event-fact");
+            fact.append(element("dt", "", label), element("dd", "", value));
+            facts.append(fact);
         }
+        overview.append(facts);
         if (hasText(content.description)) {
-            general.append(element("p", "division-event-description", content.description));
+            overview.append(element("p", "division-event-description", content.description));
         }
 
-        const participation = content.participation || {};
         const participationSection = section("participation", "Taking part");
         const format = element("div", "division-format-facts");
-        const teamSize = Math.max(1, Math.min(4, Number(participation.teamSize) || 1));
         for (const [label, value] of [
             ["Match format", `${teamSize} vs ${teamSize}`],
             ["Participation", participation.mode === "teams" ? "Team entry" : "Individual entry"],
@@ -346,17 +383,25 @@
                 node.append(element("p", "division-edit-prompt", "Add the text for this section."));
             }
         }
-        page.replaceChildren(sections.get("general"), ...order.map(key => sections.get(key)).filter(Boolean));
-        if (options.editing && (canEdit("custom") || optionalSections.some(key => !order.includes(key) && canEdit(key)))
-            && typeof options.onAddSection === "function") {
-            const add = element("button", "division-add-section");
+        const visible = [sections.get("general"), ...order.map(key => sections.get(key)).filter(Boolean)];
+        const canAdd = options.editing && (canEdit("custom") || optionalSections.some(key => !order.includes(key) && canEdit(key)))
+            && typeof options.onAddSection === "function";
+        page.replaceChildren();
+        visible.forEach((node, index) => {
+            page.append(node);
+            if (!canAdd) return;
+            const last = index === visible.length - 1;
+            const add = element("button", last ? "division-add-section" : "division-section-insert");
+            const key = node.dataset.section;
             add.type = "button";
-            const plus = element("span", "division-add-section-icon", "+");
+            add.dataset.afterSection = key;
+            add.setAttribute("aria-label", `Add section after ${key === "general" ? "event information" : node.querySelector("h2")?.textContent || "this section"}`);
+            const plus = element("span", last ? "division-add-section-icon" : "division-section-insert-icon", "+");
             plus.setAttribute("aria-hidden", "true");
             add.append(plus, element("span", "", "Add section"));
-            add.addEventListener("click", () => options.onAddSection());
+            add.addEventListener("click", () => options.onAddSection(key));
             page.append(add);
-        }
+        });
         return page;
     }
 

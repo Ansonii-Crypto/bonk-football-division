@@ -11,6 +11,7 @@
         referendums: "Proposals and the choices being discussed."
     };
     const roleNames = { "site-admin": "Site administrator", director: "Division director", organizer: "Organiser", editor: "Editor" };
+    const statusNames = { upcoming: "Upcoming", registration: "Registration open", live: "Live", completed: "Completed" };
 
     function element(tag, className, text) {
         const node = document.createElement(tag);
@@ -63,64 +64,126 @@
         }
     }
 
-    function applyBackground(node, appearance, card = false) {
+    function applyBackground(node, appearance) {
         const colour = /^#[0-9a-f]{6}$/i.test(appearance?.backgroundColor || "") ? appearance.backgroundColor : "";
         const image = backgroundImage(appearance?.backgroundImage || "");
         const custom = Boolean(colour || image);
-        if (!card) node.hidden = !custom;
+        node.hidden = !custom;
         if (!custom) return;
         node.style.backgroundColor = colour || "#080c14";
         const layers = [];
-        if (card) layers.push("linear-gradient(rgb(8 12 20 / 72%), rgb(8 12 20 / 88%))");
-        else if (image) layers.push("linear-gradient(rgb(8 12 20 / 22%), rgb(8 12 20 / 22%))");
+        if (image) layers.push("linear-gradient(rgb(8 12 20 / 22%), rgb(8 12 20 / 22%))");
         if (image) layers.push(`url(${JSON.stringify(image)})`);
         node.style.backgroundImage = layers.length ? layers.join(", ") : "none";
     }
 
     function invitation() {
         const panel = element("section", "division-host-invitation");
-        panel.append(element("p", "division-eyebrow", "For tournament hosts"), element("h2", "", "Bring your event to the division."),
-            element("p", "", "Running a Bonk.io football tournament? This is a place for your event, its players and the people organising it."),
-            element("span", "division-state", "Host request form coming soon"));
+        const copy = element("div");
+        copy.append(element("h2", "", "Hosting a tournament?"), element("p", "", "Keep your event, schedule, teams and results together."));
+        panel.append(copy, element("span", "division-muted", "Host requests coming soon"));
         return panel;
     }
 
-    function card(division, managed = false) {
+    function applyCover(node, appearance) {
+        const colour = /^#[0-9a-f]{6}$/i.test(appearance?.backgroundColor || "") ? appearance.backgroundColor : "";
+        const image = backgroundImage(appearance?.backgroundImage);
+        node.classList.toggle("division-cover--custom", Boolean(colour));
+        node.classList.toggle("division-cover--image", Boolean(image));
+        if (colour) node.style.setProperty("--division-cover-colour", colour);
+        else node.style.removeProperty("--division-cover-colour");
+        if (image) node.style.setProperty("--division-cover-image", `url(${JSON.stringify(image)})`);
+        else node.style.removeProperty("--division-cover-image");
+    }
+
+    function eventDates(start, end) {
+        const valid = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00`));
+        const values = [start, end].filter(valid);
+        if (!values.length) return "Dates to be announced";
+        const format = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
+        const first = new Date(`${values[0]}T12:00:00`);
+        const last = new Date(`${values.at(-1)}T12:00:00`);
+        return first.getTime() !== last.getTime() && first < last && format.formatRange
+            ? format.formatRange(first, last) : format.format(first);
+    }
+
+    function card(division) {
         const node = element("a", "division-event-card");
         node.href = `#divisions/${encodeURIComponent(division.id)}`;
-        applyBackground(node, division.appearance, true);
-        node.append(element("span", "division-state", managed && !division.publishedAt ? "Private draft" : division.status || "Upcoming"),
+        const cover = element("div", "division-card-cover division-cover");
+        cover.setAttribute("aria-hidden", "true");
+        applyCover(cover, division.appearance);
+        const body = element("div", "division-card-content");
+        const status = Object.hasOwn(statusNames, division.status) ? division.status : "upcoming";
+        body.append(element("span", `division-state division-state--${status}`, statusNames[status]),
             element("h3", "", division.name), element("p", "", division.summary || "Open the event for its format, schedule and bracket."));
+        const metadata = element("div", "division-card-meta");
+        metadata.append(element("span", "", eventDates(division.startDate, division.endDate)));
+        const size = division.participation?.teamSize;
+        if (Number.isInteger(size) && size >= 1 && size <= 4) metadata.append(element("span", "", `${size} vs ${size}`));
+        body.append(metadata);
         const footer = element("div", "division-card-footer");
-        footer.append(element("span", "", managed ? roleNames[division.role] || "Management" : division.startDate || "Dates to be announced"), element("span", "", "Open event →"));
-        node.append(footer);
+        const count = division.entrantCount;
+        const entrant = division.participation?.mode === "teams" ? "team" : "player";
+        footer.append(element("span", "", Number.isInteger(count) && count > 0 ? `${count} ${entrant}${count === 1 ? "" : "s"}` : "Entrants to be announced"), element("span", "", "Open event →"));
+        body.append(footer);
+        node.append(cover, body);
         return node;
+    }
+
+    function draftRow(division) {
+        const row = element("a", "division-draft-row");
+        row.href = `#divisions/${encodeURIComponent(division.id)}`;
+        const identity = element("div", "division-draft-identity");
+        identity.append(element("strong", "", division.name), element("span", "division-muted", roleNames[division.role] || "Division management"));
+        row.append(identity, element("span", "division-state", division.publishedAt ? "Unpublished changes" : "Private draft"),
+            element("span", "division-draft-action", "Continue editing →"));
+        return row;
     }
 
     function renderList() {
         const section = element("section", "page-content divisions-directory");
         const session = window.BonkAccount.session();
-        section.append(invitation());
         const management = element("div", "division-directory-management");
         const events = element("section", "division-directory-events");
-        events.append(element("h2", "", "Published events"));
+        const heading = element("div", "division-directory-heading");
+        heading.append(element("h2", "", "Events"));
+        events.append(heading);
+        const filters = element("nav", "division-directory-filters");
+        filters.setAttribute("aria-label", "Filter divisions by status");
+        let currentStatus = "all";
+        let page = 1;
+        for (const [value, label] of [["all", "All"], ["live", "Live"], ["upcoming", "Upcoming"], ["completed", "Completed"]]) {
+            const filter = button(label, () => {
+                if (currentStatus === value) return;
+                currentStatus = value; page = 1;
+                for (const option of filters.querySelectorAll("button")) option.setAttribute("aria-pressed", String(option.dataset.status === value));
+                void loadEvents();
+            }, "division-status-filter");
+            filter.dataset.status = value;
+            filter.setAttribute("aria-pressed", String(value === "all"));
+            filters.append(filter);
+        }
         const grid = element("div", "division-event-grid");
         const loading = element("p", "division-muted", "Loading events…");
         loading.setAttribute("role", "status");
         grid.append(loading);
         const pagination = element("nav", "division-directory-pagination");
         pagination.setAttribute("aria-label", "Division pages");
-        events.append(grid, pagination);
-        section.append(management, events);
-        let page = 1;
+        events.append(filters, grid, pagination);
+        section.append(events, management, invitation());
         let listRevision = 0;
         async function loadEvents() {
             const revision = ++listRevision;
+            grid.setAttribute("aria-busy", "true");
             try {
-                const data = await request(`/api/divisions?page=${page}&limit=12`);
+                const parameters = new URLSearchParams({ page: String(page), limit: "12" });
+                if (currentStatus !== "all") parameters.set("status", currentStatus);
+                const data = await request(`/api/divisions?${parameters}`);
                 if (!section.isConnected || revision !== listRevision) return;
-                grid.replaceChildren(...data.divisions.map(item => card(item)));
-                if (!data.divisions.length) grid.append(element("p", "division-empty", "No events have been published yet."));
+                page = data.page;
+                grid.replaceChildren(...data.divisions.map(card));
+                if (!data.divisions.length) grid.append(element("p", "division-empty", currentStatus === "all" ? "No events have been published yet." : `No ${currentStatus} events right now.`));
                 pagination.replaceChildren();
                 if (data.pages > 1) {
                     const previous = button("Previous", () => { page -= 1; void loadEvents(); });
@@ -132,13 +195,14 @@
             } catch (error) {
                 if (!section.isConnected || revision !== listRevision) return;
                 grid.replaceChildren(element("p", "division-error", error.message), button("Try again", () => void loadEvents()));
+                pagination.replaceChildren();
+            } finally {
+                if (revision === listRevision) grid.setAttribute("aria-busy", "false");
             }
         }
         if (session.account) {
-            const heading = element("div", "division-directory-heading");
-            heading.append(element("h2", "", session.account.isAdmin ? "Division management" : "Your divisions"));
-            management.append(heading);
-            const managed = element("div", "division-event-grid");
+            management.append(element("h2", "", session.account.isAdmin ? "Division drafts" : "Your drafts"));
+            const managed = element("div", "division-draft-list");
             management.append(managed);
             if (session.account.isAdmin) {
                 const create = element("form", "division-create-form");
@@ -170,20 +234,27 @@
                         submit.disabled = false;
                     }
                 });
-                heading.append(button("New division", () => { create.hidden = !create.hidden; if (!create.hidden) name.focus(); }, "division-button--primary"));
-                management.append(create);
+                const toggle = button("New division", () => {
+                    create.hidden = !create.hidden;
+                    toggle.setAttribute("aria-expanded", String(!create.hidden));
+                    if (!create.hidden) name.focus();
+                }, "division-button--primary");
+                toggle.setAttribute("aria-expanded", "false");
+                heading.append(toggle);
+                heading.after(create);
             }
             let managedPage = 1;
             let managedRevision = 0;
             const managedPagination = element("nav", "division-directory-pagination");
-            managedPagination.setAttribute("aria-label", "Managed division pages");
+            managedPagination.setAttribute("aria-label", "Division draft pages");
             management.append(managedPagination);
             async function loadManaged() {
                 const revision = ++managedRevision;
                 try {
-                    const data = await request(`/api/manage/divisions?page=${managedPage}&limit=12`);
+                    const data = await request(`/api/manage/divisions?page=${managedPage}&limit=6&publication=drafts`);
                     if (!section.isConnected || revision !== managedRevision) return;
-                    managed.replaceChildren(...data.divisions.map(item => card(item, true)));
+                    managedPage = data.page;
+                    managed.replaceChildren(...data.divisions.map(draftRow));
                     managedPagination.replaceChildren();
                     if (data.pages > 1) {
                         const previous = button("Previous", () => { managedPage -= 1; void loadManaged(); });
@@ -194,10 +265,10 @@
                     }
                     if (!data.divisions.length) {
                         if (!session.account.isAdmin) management.hidden = true;
-                        else managed.append(element("p", "division-empty", "Create a division to start its private event template."));
+                        else managed.append(element("p", "division-muted", "No unpublished drafts or changes. Use New division to create an event."));
                     }
                 } catch (error) {
-                    if (section.isConnected && revision === managedRevision) managed.replaceChildren(element("p", "division-error", error.message));
+                    if (section.isConnected && revision === managedRevision) managed.replaceChildren(element("p", "division-error", error.message), button("Try again", () => void loadManaged()));
                 }
             }
             void Promise.resolve().then(loadManaged);
@@ -236,6 +307,7 @@
         let inlineSave = null;
         let inlineCancel = null;
         let pickerOpen = false;
+        let insertionAfter = null;
         let toolMode = "";
         let toolPanel = null;
         let notice;
@@ -311,6 +383,7 @@
             const anchor = (node, edge = "top", replacementY) => {
                 if (!node) return;
                 position.anchors.push({ key: node.dataset.section || null, add: node.matches(".division-add-section"),
+                    insert: node.matches(".division-section-insert") ? node.dataset.afterSection : null,
                     edge, viewportY: replacementY ?? node.getBoundingClientRect()[edge] });
             };
             if (current) {
@@ -318,6 +391,11 @@
                 const add = preview.querySelector(".division-add-section");
                 if (rect.top >= headerBottom) {
                     anchor(current);
+                    if (activeEditor.insertedAfter) {
+                        const insert = [...preview.querySelectorAll(".division-section-insert, .division-add-section")]
+                            .find(node => node.dataset.afterSection === activeEditor.insertedAfter);
+                        anchor(insert, "top", rect.top);
+                    }
                     // A cancelled new section is replaced by the Add section area.
                     anchor(add, "top", rect.top);
                 } else {
@@ -341,7 +419,8 @@
                 const nodes = previewSections();
                 let top = position.top;
                 for (const anchor of position.anchors) {
-                    const node = anchor.add ? preview.querySelector(".division-add-section") : nodes.find(node => node.dataset.section === anchor.key);
+                    const node = anchor.insert ? [...preview.querySelectorAll(".division-section-insert")].find(item => item.dataset.afterSection === anchor.insert)
+                        : anchor.add ? preview.querySelector(".division-add-section") : nodes.find(item => item.dataset.section === anchor.key);
                     if (!node) continue;
                     top = window.scrollY + node.getBoundingClientRect()[anchor.edge] - anchor.viewportY;
                     break;
@@ -368,6 +447,7 @@
             message = "Unsaved changes · save before publishing";
             if (activeEditor) activeEditor.error = "";
             applyBackground(backdrop, draft.appearance);
+            for (const cover of preview?.querySelectorAll(".division-cover") || []) applyCover(cover, draft.appearance);
             section.classList.toggle("division-custom-background", !backdrop.hidden);
             updateNotice();
             if (!activeEditor) paintPreview();
@@ -389,7 +469,7 @@
             if (close) close.disabled = pending;
             if (inlineStatus) inlineStatus.textContent = activeEditor?.error || (pending ? "Saving section…" : "");
             if (pending) {
-                for (const control of preview?.querySelectorAll(".division-section-control, .division-add-section, .division-add-panel button") || []) control.disabled = true;
+                for (const control of preview?.querySelectorAll(".division-section-control, .division-section-insert, .division-add-section, .division-add-panel button") || []) control.disabled = true;
             }
         }
         function paintPreview() {
@@ -400,7 +480,7 @@
             preview.replaceChildren(window.DivisionView.render(draft, {
                 editing, selectedSection: selected, editableSections: model.permissions?.editSections || [],
                 onSection: selectSection,
-                onAddSection() { selectSection("add"); },
+                onAddSection(afterKey) { selectSection("add", afterKey); },
                 onMoveSection(key, offset) {
                     if (blockingEditor() || pending) return;
                     const order = window.DivisionView.sectionOrder(draft);
@@ -423,27 +503,31 @@
                     const before = clone(draft);
                     draft.sectionOrder = window.DivisionView.sectionOrder(draft).filter(value => value !== key);
                     remember(before);
-                    pickerOpen = true;
+                    pickerOpen = false;
                     change();
                     preview.querySelector(".division-add-section")?.focus({ preventScroll: true });
                 }
             }));
             if (blockingEditor()) {
-                for (const control of preview.querySelectorAll(".division-section-control, .division-add-section")) control.disabled = true;
+                for (const control of preview.querySelectorAll(".division-section-control, .division-section-insert, .division-add-section")) control.disabled = true;
                 const target = [...preview.querySelectorAll("[data-section]")].find(node => node.dataset.section === activeEditor.key);
                 if (target) target.replaceChildren(renderInlineEditor());
             } else if (pickerOpen && editing) {
                 const panel = element("div", "division-add-panel");
                 panel.append(element("p", "division-eyebrow", "Build your page"), element("h2", "", "Add a section"));
                 editSectionPicker(panel);
-                panel.append(button("Cancel", () => { pickerOpen = false; paintPreview(); }));
-                const add = preview.querySelector(".division-add-section");
+                panel.dataset.afterSection = insertionAfter || "";
+                panel.append(button("Cancel", () => {
+                    const position = editorScrollPosition(); pickerOpen = false; paintAtScrollPosition(position);
+                }));
+                const add = [...preview.querySelectorAll(".division-section-insert, .division-add-section")]
+                    .find(node => node.dataset.afterSection === insertionAfter) || preview.querySelector(".division-add-section");
                 if (add) add.replaceWith(panel);
                 else preview.append(panel);
             }
             refreshSectionRail();
         }
-        function selectSection(key) {
+        function selectSection(key, afterKey = null) {
             if (pending) return;
             const position = activeEditor?.key === "appearance" ? editorScrollPosition() : null;
             parkBackground();
@@ -453,16 +537,21 @@
                 updateNotice();
                 return;
             }
-            if (key === "add") { pickerOpen = true; toolMode = ""; if (position) paintAtScrollPosition(position); else paint(); return; }
+            if (key === "add") {
+                insertionAfter = afterKey || window.DivisionView.sectionOrder(draft).at(-1) || "general";
+                pickerOpen = true; toolMode = "";
+                if (position) paintAtScrollPosition(position); else paint();
+                return;
+            }
             beginSection(key, snapshot(), position);
         }
-        function beginSection(key, before = snapshot(), position = null) {
+        function beginSection(key, before = snapshot(), position = null, insertedAfter = null) {
             if (!editable(key) || activeEditor || pending) return;
             selected = key;
             editing = true;
             pickerOpen = false;
             toolMode = "";
-            activeEditor = { key, before, error: "" };
+            activeEditor = { key, before, insertedAfter, error: "" };
             if (key === "appearance") toolsOpen = true;
             if (position) paintAtScrollPosition(position);
             else paint();
@@ -603,12 +692,14 @@
                 notice = element("p", "division-message"); notice.setAttribute("role", "status"); identity.append(notice);
                 const actions = element("div", "division-management-actions");
                 const modes = element("div", "division-mode-switch");
+                modes.append(element("p", "division-tool-group-label", "Mode"));
                 const view = button("View", () => setMode(false));
                 const edit = button("Edit", () => setMode(true));
                 view.disabled = pending; edit.disabled = pending;
                 view.setAttribute("aria-pressed", String(!editing)); edit.setAttribute("aria-pressed", String(editing));
                 modes.append(view, edit);
                 const pageActions = element("div", "division-page-actions");
+                pageActions.append(element("p", "division-tool-group-label", "Publication"));
                 saveButton = button("Save draft", () => { closeBackground(); void save(); }, "division-button--primary");
                 pageActions.append(saveButton);
                 if (model.permissions.publish) {
@@ -616,6 +707,7 @@
                     if (model.publishedAt) { const unpublishButton = button("Unpublish", () => { closeBackground(); void unpublish(); }, "division-button--danger"); unpublishButton.disabled = pending; pageActions.append(unpublishButton); }
                 }
                 const settings = element("div", "division-settings-actions");
+                settings.append(element("p", "division-tool-group-label", "Appearance & access"));
                 if (editable("appearance")) {
                     const background = button("Background", () => { if (activeEditor?.key === "appearance") closeBackground(); else beginSection("appearance"); });
                     background.setAttribute("aria-expanded", String(activeEditor?.key === "appearance"));
@@ -628,6 +720,7 @@
                     if (position) paintAtScrollPosition(position); else paint();
                 }));
                 const history = element("div", "division-history-actions");
+                history.append(element("p", "division-tool-group-label", "History"));
                 undoButton = button("Undo", () => travelHistory(true));
                 redoButton = button("Redo", () => travelHistory(false));
                 history.append(undoButton, redoButton);
@@ -697,6 +790,7 @@
 
         function sharingTools() {
             const tools = element("div", "division-share-tools");
+            tools.append(element("p", "division-tool-group-label", "Links"));
             const status = element("p", "division-share-status"); status.setAttribute("role", "status");
             const fallback = element("input", "division-field division-share-fallback");
             fallback.type = "text"; fallback.readOnly = true; fallback.hidden = true;
@@ -870,11 +964,14 @@
             const choices = element("div", "division-section-picker");
             function addToPage(key, before = snapshot()) {
                 if (pending || activeEditor) return;
-                draft.sectionOrder = [...window.DivisionView.sectionOrder(draft), key];
+                const order = window.DivisionView.sectionOrder(draft).filter(value => value !== key);
+                const index = insertionAfter === "general" ? 0 : order.includes(insertionAfter) ? order.indexOf(insertionAfter) + 1 : order.length;
+                order.splice(index, 0, key);
+                draft.sectionOrder = order;
                 dirty = true;
                 editRevision += 1;
                 message = "New section · save or cancel to finish adding it";
-                beginSection(key, before);
+                beginSection(key, before, null, insertionAfter);
             }
             if (editable("custom")) {
                 const addText = button("", () => {

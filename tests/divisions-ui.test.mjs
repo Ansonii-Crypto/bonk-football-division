@@ -290,6 +290,54 @@ test("cancelling a newly added text section removes it, while saved text section
     assert.equal(saved.customSections[0].description, "Updated rules after the first save.");
 });
 
+test("a section can be inserted between existing sections and cancelled without changing their order", async t => {
+    let model = modelFor({ ...content(), sectionOrder: ["timeline", "teams"], customSections: [] });
+    const writes = [];
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            const body = JSON.parse(options.body); writes.push(body);
+            model = { ...model, content: body.content, version: body.version + 1 };
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    button(window, "Edit").click();
+    const insert = () => document.querySelector('.division-section-insert[data-after-section="timeline"]');
+    insert().click();
+    assert.equal(document.querySelector(".division-add-panel").dataset.afterSection, "timeline");
+    document.querySelector('[data-add-section="custom"]').click();
+    document.querySelector(".division-inline-cancel").click();
+    assert.deepEqual([...document.querySelectorAll(".division-view > [data-section]")].map(node => node.dataset.section), ["general", "timeline", "teams"]);
+    assert.equal(writes.length, 0);
+    insert().click(); document.querySelector('[data-add-section="custom"]').click();
+    input(window, field(window, "Section title"), "Match rules");
+    input(window, field(window, "Section text"), "Rules before the team list.");
+    document.querySelector(".division-inline-save").click(); await tick();
+    assert.equal(writes.length, 1);
+    const custom = `custom:${model.content.customSections[0].id}`;
+    assert.deepEqual(Array.from(model.content.sectionOrder), ["timeline", custom, "teams"]);
+    button(window, "Undo").click();
+    assert.equal(document.querySelector('[data-section^="custom:"]'), null);
+});
+
+test("background previews update and reset the banner without replacing the active input", async t => {
+    const model = modelFor();
+    const window = await page(t, async () => Response.json({ division: model }), "#divisions/1");
+    const { document } = window;
+    button(window, "Background").click();
+    const colour = field(window, "Background colour");
+    input(window, colour, "#407159");
+    assert.equal(document.querySelector(".division-event-cover").style.getPropertyValue("--division-cover-colour"), "#407159");
+    assert.equal(field(window, "Background colour"), colour);
+    input(window, field(window, "Background image URL"), "https://example.com/field.jpg");
+    assert.ok(document.querySelector(".division-event-cover.division-cover--image"));
+    button(window, "Reset background").click();
+    const cover = document.querySelector(".division-event-cover");
+    assert.equal(cover.style.getPropertyValue("--division-cover-image"), "");
+    assert.equal(cover.classList.contains("division-cover--image"), false);
+});
+
 test("an open section chooser cannot mutate the draft while a global save is pending", async t => {
     let finishSave;
     let saves = 0;
