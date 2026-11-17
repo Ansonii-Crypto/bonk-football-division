@@ -193,7 +193,7 @@
                 node.classList.add("division-event-section--editable");
                 if (options.selectedSection === key) node.classList.add("division-event-section--selected");
                 const actions = element("div", "division-section-actions");
-                const edit = element("button", "division-section-control division-section-edit division-section-edit--keyboard", "Edit");
+                const edit = element("button", "division-section-control division-section-edit", "Edit");
                 edit.type = "button";
                 edit.setAttribute("aria-label", `Edit ${title || "event information"}`);
                 edit.addEventListener("click", () => options.onSection?.(key));
@@ -216,11 +216,6 @@
                     actions.append(remove);
                 }
                 heading.append(actions);
-                node.addEventListener("click", event => {
-                    if (!event.target.closest("button, a, input, textarea, select, summary")) {
-                        options.onSection?.(key);
-                    }
-                });
             }
             if (heading.childElementCount) {
                 node.append(heading);

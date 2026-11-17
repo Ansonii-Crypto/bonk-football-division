@@ -1006,10 +1006,14 @@ body.class-panel-open {
     border: 1px solid rgb(235 238 246 / 25%);
     border-radius: 0.7rem;
     font: inherit;
-    font-size: 1.6rem;
-    line-height: 1;
     cursor: pointer;
     pointer-events: auto;
+}
+
+.class-panel-close svg {
+    display: block;
+    width: 1.125rem;
+    height: 1.125rem;
 }
 
 .class-panel-close:hover {

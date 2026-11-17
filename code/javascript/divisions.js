@@ -503,6 +503,7 @@
         function paintPreview() {
             if (!preview) return;
             scrollRestoreRevision += 1;
+            formatPanel = null;
             applyBackground(backdrop, draft.appearance);
             section.classList.toggle("division-custom-background", !backdrop.hidden);
             preview.replaceChildren(window.DivisionView.render(draft, {
@@ -603,6 +604,11 @@
             if (settingsEditorOpen()) header.append(button("Close panel", closeSettings, "division-tool-close"));
             form.append(header);
             if (settingsEditorOpen()) form.append(element("p", "division-background-hint", "Changes preview immediately. Close to keep them in your draft, or Cancel to revert."));
+            if (!settingsEditorOpen()) {
+                formatPanel = renderFormattingPanel();
+                formatPanel.classList.add("division-inline-formatting");
+                form.append(formatPanel);
+            }
             editorFields = element("fieldset", "division-inline-fields");
             form.append(editorFields);
             paintInspector();
@@ -754,8 +760,7 @@
                 undoButton = button("Undo", () => travelHistory(true));
                 redoButton = button("Redo", () => travelHistory(false));
                 history.append(undoButton, redoButton);
-                formatPanel = renderFormattingPanel();
-                actions.append(modes, formatPanel, pageActions, settings, history);
+                actions.append(modes, pageActions, settings, history);
                 const reload = button("Reload saved draft", () => {
                     if (!dirty || window.confirm("Discard the unsaved preview changes and reload the saved draft?")) void load();
                 });
@@ -883,7 +888,7 @@
 
         function updateFormattingPanel() {
             if (!formatPanel) return;
-            formatPanel.hidden = !inlineEditorOpen();
+            formatPanel.hidden = !inlineEditorOpen() || !fieldBindings.size;
             const binding = fieldBindings.get(textSelection?.path);
             const hasField = Boolean(binding?.control.isConnected && binding.control.value.length);
             const hasRange = hasField && textSelection.start < textSelection.end;

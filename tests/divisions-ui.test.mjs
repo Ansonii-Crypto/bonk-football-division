@@ -193,8 +193,13 @@ test("an inline save disables fields until the server confirms the saved section
     editSection(window);
     const description = field(window, "About this event");
     input(window, description, "Saved section text");
+    description.setSelectionRange(0, 5);
+    description.dispatchEvent(new window.Event("select", { bubbles: true }));
+    assert.equal(window.document.querySelector('[data-format-property="bold"]').disabled, false);
     window.document.querySelector(".division-inline-save").click();
     assert.equal(description.matches(":disabled"), true);
+    assert.ok([...window.document.querySelectorAll(".division-inline-formatting button, .division-inline-formatting input, .division-inline-formatting select")]
+        .every(control => control.disabled), "section formatting is disabled while the draft is being saved");
     assert.equal(button(window, "Publish").disabled, true);
     finishSave();
     await tick();
@@ -959,6 +964,8 @@ test("selected text formatting stays live, survives section switching and saves 
     description.setSelectionRange(0, 8);
     description.dispatchEvent(new window.Event("select", { bubbles: true }));
     const panel = document.querySelector(".division-format-panel");
+    assert.equal(panel.closest(".division-inline-editor"), description.closest("form"));
+    assert.equal(document.querySelector(".division-management-tools .division-format-panel"), null);
     const bold = panel.querySelector('[data-format-property="bold"]');
     assert.equal(bold.disabled, false);
     bold.click();
@@ -1008,4 +1015,40 @@ test("typing rebases text styles and Cancel restores formatting together with th
     document.querySelector(".division-inline-cancel").click();
     assert.equal(document.querySelector('[data-text-path="general.description"] .division-formatted-text').textContent, "Original");
     assert.equal(button(window, "Save draft").disabled, true);
+});
+
+test("formatting tools stay with the active section and appear when new text fields are added", async t => {
+    const model = modelFor({ ...content(), sectionOrder: ["teams", "bracket"] });
+    const window = await page(t, async () => Response.json({ division: model }), "#divisions/1");
+    const { document } = window;
+    assert.equal(document.querySelector(".division-format-panel"), null, "View mode has no formatting controls");
+    button(window, "Edit").click();
+    editSection(window);
+    assert.equal(document.querySelectorAll(".division-inline-editor .division-inline-formatting").length, 1);
+    assert.equal(document.querySelector(".division-management-tools .division-format-panel"), null);
+    button(window, "Background").click();
+    assert.ok(document.querySelector(".division-management-tools .division-appearance-editor"));
+    assert.equal(document.querySelector(".division-format-panel"), null, "background settings have no section formatting toolbar");
+    button(window, "Close panel").click();
+    editSection(window, "teams");
+    const toolbar = document.querySelector(".division-inline-formatting");
+    assert.equal(toolbar.hidden, true, "an empty team list has no text to format");
+    button(window, "Add team").click();
+    assert.equal(document.querySelector(".division-inline-formatting"), toolbar, "adding fields keeps the section toolbar in place");
+    assert.equal(toolbar.hidden, false);
+    const teamName = field(window, "Team name");
+    input(window, teamName, "North United");
+    toolbar.querySelector(".division-format-all").click();
+    assert.equal(toolbar.querySelector('[data-format-property="bold"]').disabled, false);
+    toolbar.querySelector('[data-format-property="bold"]').click();
+    assert.equal(teamName.closest("label").querySelector(".division-formatted-text").textContent, "North United");
+    editSection(window, "bracket");
+    assert.equal(document.querySelectorAll(".division-format-panel").length, 1);
+    assert.equal(document.querySelector(".division-inline-formatting").hidden, true, "score controls do not show text styling");
+    assert.equal(toolbar.isConnected, false, "switching sections removes the old toolbar");
+    button(window, "View").click();
+    assert.equal(document.querySelector(".division-format-panel"), null);
+    for (const label of ["Save draft", "Background", "Banner", "Management roles", "Undo", "Redo"]) {
+        assert.ok(button(window, label).closest(".division-management-tools"), `${label} remains in the global tools`);
+    }
 });

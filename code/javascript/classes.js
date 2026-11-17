@@ -113,7 +113,18 @@ function renderClassesPage(initialClass = "") {
     closeButton.className = "class-panel-close";
     closeButton.setAttribute("aria-label", "Close playstyle panel");
     closeButton.autofocus = true;
-    closeButton.textContent = "\u00d7";
+    const closeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    closeIcon.setAttribute("viewBox", "0 0 24 24");
+    closeIcon.setAttribute("aria-hidden", "true");
+    closeIcon.setAttribute("focusable", "false");
+    closeIcon.setAttribute("fill", "none");
+    closeIcon.setAttribute("stroke", "currentColor");
+    closeIcon.setAttribute("stroke-width", "2");
+    closeIcon.setAttribute("stroke-linecap", "round");
+    const closePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    closePath.setAttribute("d", "M6 6l12 12M18 6 6 18");
+    closeIcon.append(closePath);
+    closeButton.append(closeIcon);
 
     const panelControls = document.createElement("div");
     panelControls.className = "class-panel-controls";

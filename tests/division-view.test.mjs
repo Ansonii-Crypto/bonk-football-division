@@ -124,6 +124,10 @@ test("section controls select, move, remove and add without exposing controls on
     assert.ok(rendered.querySelector("[data-section='timeline']").classList.contains("division-event-section--selected"));
     assert.equal(rendered.querySelector("[data-section='campaigns'] .division-section-move-up").disabled, true);
     assert.equal(rendered.querySelector("[data-section='timeline'] .division-section-move-down").disabled, true);
+    rendered.querySelector("[data-section='timeline']").click();
+    rendered.querySelector("[data-section='timeline'] h2").click();
+    assert.deepEqual(calls, [], "reading a section or clicking its heading does not open an editor");
+    assert.equal(rendered.querySelector(".division-section-edit--keyboard"), null, "Edit is a visible section action");
     rendered.querySelector("[data-section='timeline'] .division-section-edit").click();
     rendered.querySelector("[data-section='campaigns'] .division-section-move-down").click();
     rendered.querySelector("[data-section='timeline'] .division-section-remove").click();
@@ -248,10 +252,12 @@ test("banner editing has its own permitted pen control and does not open the eve
     assert.ok(pen.querySelector("svg path"));
     pen.click();
     assert.deepEqual(calls, ["banner"]);
-    const keyboardEdit = rendered.querySelector(".division-section-edit--keyboard");
-    assert.equal(keyboardEdit.type, "button");
-    keyboardEdit.click();
-    assert.deepEqual(calls, ["banner", "general"], "keyboard users retain a native edit action");
+    const edit = rendered.querySelector(".division-section-edit");
+    assert.equal(edit.type, "button");
+    assert.equal(edit.hidden, false);
+    assert.equal(edit.getAttribute("aria-label"), "Edit event information");
+    edit.click();
+    assert.deepEqual(calls, ["banner", "general"], "the visible native Edit button remains keyboard accessible");
     assert.equal(DivisionView.render(content, { editing: true, editableSections: ["general"], onBanner() {} }).querySelector(".division-banner-edit"), null);
     assert.equal(DivisionView.render(content, { editableSections: ["appearance"], onBanner() {} }).querySelector(".division-banner-edit"), null);
     const cleared = DivisionView.render({ ...content, appearance: { ...content.appearance, bannerColor: "", bannerImage: "" } }).querySelector(".division-event-cover");
