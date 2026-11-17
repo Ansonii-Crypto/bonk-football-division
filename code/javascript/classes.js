@@ -305,7 +305,7 @@ function renderClassesPage() {
         } else {
             panelTitle.focus({ preventScroll: true });
         }
-        panel.scrollTop = 0;
+        panelContent.scrollTop = 0;
     }
 
     classes.forEach((playstyle, index) => {

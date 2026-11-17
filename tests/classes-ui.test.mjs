@@ -68,13 +68,14 @@ test("related classes replace the open panel and dismissal returns focus to the 
     trigger.focus();
     trigger.click();
     const panel = document.querySelector(".class-panel");
-    panel.scrollTop = 300;
+    const panelContent = panel.querySelector(".class-panel-content");
+    panelContent.scrollTop = 300;
     document.querySelector('[data-relationship="strong"] .class-relationship-link').click();
     assert.equal(panel.open, true);
     assert.equal(document.querySelectorAll(".class-panel").length, 1);
     assert.equal(document.querySelector("#class-panel-title").textContent, "Bulwark");
     assert.equal(document.activeElement.id, "class-panel-title");
-    assert.equal(panel.scrollTop, 0);
+    assert.equal(panelContent.scrollTop, 0);
     assert.deepEqual(relatedNames(document, "weak"), ["Weaver"]);
     assert.equal(document.querySelector("video").getAttribute("aria-label"), "Bulwark playstyle video");
     document.querySelector('[data-relationship="teammates"] .class-relationship-link').click();

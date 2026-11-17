@@ -958,17 +958,23 @@ body.class-panel-open {
 .class-panel {
     width: min(52rem, calc(100% - 2rem));
     max-width: none;
+    height: 90svh;
+    height: 90dvh;
     max-height: calc(100svh - 2rem);
+    max-height: calc(100dvh - 2rem);
     margin: auto;
     padding: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    overflow: hidden;
     color: var(--text);
     background: #202127;
     border: 1px solid rgb(235 238 246 / 25%);
     border-radius: 1.15rem;
     box-shadow: 0 24px 90px rgb(0 0 0 / 65%);
+}
+
+.class-panel[open] {
+    display: flex;
+    flex-direction: column;
 }
 
 .class-panel::backdrop {
@@ -978,8 +984,8 @@ body.class-panel-open {
 }
 
 .class-panel-controls {
-    position: sticky;
-    top: 0;
+    position: relative;
+    flex: 0 0 0;
     z-index: 2;
     height: 0;
     pointer-events: none;
@@ -1017,6 +1023,7 @@ body.class-panel-open {
 
 .class-video {
     position: relative;
+    flex: 0 0 auto;
     width: 100%;
     height: min(32svh, 20rem);
     min-height: 10rem;
@@ -1046,7 +1053,12 @@ body.class-panel-open {
 }
 
 .class-panel-content {
+    flex: 1;
+    min-height: 0;
     padding: 1.5rem 2rem 1.75rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .class-panel-content h2 {
