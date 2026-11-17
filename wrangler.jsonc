@@ -17,7 +17,14 @@
     "assets": {
         "directory": "./dist",
         "binding": "ASSETS",
-        "run_worker_first": ["/api", "/api/*"]
+        "run_worker_first": [
+            "/api", "/api/*",
+            "/", "/home", "/home/",
+            "/assessments", "/assessments/*", "/players", "/tiers",
+            "/classes", "/classes/*",
+            "/divisions", "/divisions/*",
+            "/account", "/account/", "/profile", "/profile/", "/admin", "/admin/"
+        ]
     },
     "d1_databases": [
         {

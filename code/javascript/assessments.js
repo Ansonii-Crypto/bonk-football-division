@@ -95,6 +95,7 @@
             const url = new URL(window.location.href);
             url.hash = viewHash();
             window.history.replaceState(window.history.state, "", url);
+            window.BonkRoutes?.sync();
         } catch {
             // Some local-file previews restrict History API updates.
         }
@@ -632,7 +633,7 @@
             const attempt = ++copyAttempt;
             const url = new URL(window.location.href);
             url.hash = viewHash();
-            const link = url.href;
+            const link = window.BonkRoutes?.shareUrl(viewHash()) || url.href;
             const isCurrent = () => section.isConnected && revision === viewRevision && attempt === copyAttempt;
             const position = currentPosition();
             copyView.disabled = true;

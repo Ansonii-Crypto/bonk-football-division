@@ -931,13 +931,14 @@
             const copy = button("Copy event link", async () => {
                 const url = new URL(window.location.href);
                 url.search = ""; url.hash = `divisions/${encodeURIComponent(divisionId)}`;
+                const link = window.BonkRoutes?.shareUrl(url.hash) || url.href;
                 copy.disabled = true;
                 try {
-                    await navigator.clipboard.writeText(url.href);
+                    await navigator.clipboard.writeText(link);
                     if (status.isConnected) { status.textContent = "Event link copied"; fallback.hidden = true; }
                 } catch {
                     if (fallback.isConnected) {
-                        fallback.value = url.href; fallback.hidden = false;
+                        fallback.value = link; fallback.hidden = false;
                         fallback.focus({ preventScroll: true }); fallback.select();
                         status.textContent = "Copy this event link.";
                     }

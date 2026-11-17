@@ -904,7 +904,7 @@ test("copy event link copies the division URL and supplies selectable text when 
     Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: { writeText: async value => { copied.push(value); } } });
     button(window, "Copy event link").click();
     await tick();
-    assert.deepEqual(copied, ["https://bonk-football-division.com/#divisions/1"]);
+    assert.deepEqual(copied, ["https://bonk-football-division.com/divisions/1"]);
     assert.match(window.document.querySelector(".division-share-status").textContent, /copied/i);
     Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: undefined });
     button(window, "Copy event link").click();

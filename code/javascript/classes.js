@@ -1,6 +1,6 @@
 "use strict";
 
-function renderClassesPage() {
+function renderClassesPage(initialClass = "") {
     if (typeof window.closeClassPanel === "function") {
         window.closeClassPanel();
     }
@@ -200,6 +200,21 @@ function renderClassesPage() {
 
     let activeTrigger = null;
     let panelOpen = false;
+    let activeClassSlug = "";
+
+    function updateClassRoute(slug) {
+        if (!window.BonkRoutes) {
+            return;
+        }
+        try {
+            const url = new URL(window.location.href);
+            url.hash = slug ? `classes/${slug}` : "classes";
+            window.history.replaceState(window.history.state, "", url);
+            window.BonkRoutes.sync();
+        } catch {
+            // A local preview can still show the panel when URL updates are restricted.
+        }
+    }
 
     function releasePanel() {
         if (!panelOpen) {
@@ -228,16 +243,21 @@ function renderClassesPage() {
         }
     }
 
-    function closePanel() {
+    function closePanel(updateRoute = true) {
+        const wasOpen = panelOpen;
         if (panel.open) {
             panel.close();
         }
 
         releasePanel();
+        if (updateRoute && wasOpen && window.location.hash === `#classes/${activeClassSlug}`) {
+            updateClassRoute("");
+            document.title = "Classes | Bonk Football Division";
+        }
     }
 
-    window.closeClassPanel = closePanel;
-    closeButton.addEventListener("click", closePanel);
+    window.closeClassPanel = () => closePanel(false);
+    closeButton.addEventListener("click", () => closePanel());
     panel.addEventListener("cancel", event => {
         event.preventDefault();
         closePanel();
@@ -284,6 +304,7 @@ function renderClassesPage() {
         }
 
         const switchingClass = panel.open;
+        activeClassSlug = playstyle.name.toLowerCase();
         video.pause();
         panelTitle.textContent = playstyle.name;
         panelDescription.textContent = playstyle.description;
@@ -306,6 +327,8 @@ function renderClassesPage() {
             panelTitle.focus({ preventScroll: true });
         }
         panelContent.scrollTop = 0;
+        updateClassRoute(activeClassSlug);
+        document.title = `${playstyle.name} | Classes | Bonk Football Division`;
     }
 
     classes.forEach((playstyle, index) => {
@@ -343,6 +366,7 @@ function renderClassesPage() {
         action.setAttribute("aria-label", `Read ${playstyle.name} playstyle`);
         action.setAttribute("aria-haspopup", "dialog");
         action.setAttribute("aria-controls", panel.id);
+        action.dataset.classSlug = playstyle.name.toLowerCase();
         action.addEventListener("click", () => openPanel(playstyle, action));
 
         card.append(cardHeading, description, action);
@@ -359,5 +383,14 @@ function renderClassesPage() {
     comparison.append(assessments, document.createTextNode("."));
 
     section.append(heading, introduction, grid, comparison, panel);
+    const initialSlug = typeof initialClass === "string" ? initialClass.toLowerCase() : "";
+    const requestedClass = classes.find(playstyle => playstyle.name.toLowerCase() === initialSlug);
+    if (requestedClass) {
+        window.queueMicrotask(() => {
+            if (section.isConnected) {
+                openPanel(requestedClass, grid.querySelector(`[data-class-slug="${requestedClass.name.toLowerCase()}"]`));
+            }
+        });
+    }
     return section;
 }

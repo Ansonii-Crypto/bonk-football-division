@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+    <defs>
+        <radialGradient id="iceGlow"><stop stop-color="#207caf" stop-opacity=".23"/><stop offset="1" stop-color="#080c14" stop-opacity="0"/></radialGradient>
+        <radialGradient id="fireGlow"><stop stop-color="#b95634" stop-opacity=".2"/><stop offset="1" stop-color="#080c14" stop-opacity="0"/></radialGradient>
+        <linearGradient id="ring"><stop stop-color="#78d9ff"/><stop offset=".47" stop-color="#42a8dd"/><stop offset=".53" stop-color="#ff9b70"/><stop offset="1" stop-color="#ffbd8d"/></linearGradient>
+        <linearGradient id="line"><stop stop-color="#78d9ff" stop-opacity=".65"/><stop offset="1" stop-color="#ff9b70" stop-opacity=".65"/></linearGradient>
+    </defs>
+    <rect width="1200" height="630" fill="#080c14"/>
+    <ellipse cx="80" cy="120" rx="720" ry="650" fill="url(#iceGlow)"/>
+    <ellipse cx="1140" cy="520" rx="560" ry="620" fill="url(#fireGlow)"/>
+    <g fill="none" stroke="#b8d8ee" stroke-opacity=".095" stroke-width="2" transform="translate(810 142) rotate(-12 190 170)">
+        <rect width="380" height="340" rx="8"/>
+        <path d="M190 0v340M0 101h65v138H0M380 101h-65v138h65"/>
+        <circle cx="190" cy="170" r="57"/>
+        <circle cx="190" cy="170" r="3" fill="#b8d8ee"/>
+    </g>
+    <circle cx="966" cy="299" r="119" fill="#0a111c" stroke="url(#ring)" stroke-width="13"/>
+    <circle cx="966" cy="299" r="104" fill="#101b2a"/>
+    <circle cx="966" cy="299" r="84" fill="#0c1420"/>
+    <circle cx="820" cy="430" r="20" fill="#ecf2f9"/>
+    <circle cx="820" cy="430" r="31" fill="none" stroke="#ecf2f9" stroke-opacity=".09" stroke-width="2"/>
+    <g transform="translate(72 64)">
+        <circle cx="23" cy="23" r="21" fill="#080c14" stroke="url(#ring)" stroke-width="5"/>
+        <text x="65" y="20" fill="#f0f4fa" font-family="Segoe UI,Arial,sans-serif" font-size="21" font-weight="700">Bonk Football</text>
+        <text x="65" y="43" fill="#a1aec0" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="600" letter-spacing="4">DIVISION</text>
+    </g>
+    <g font-family="Segoe UI,Arial,sans-serif">
+        <text x="72" y="260" fill="#f0f4fa" font-size="86" font-weight="750" letter-spacing="-3">Football</text>
+        <text x="72" y="358" fill="#a6e6ff" font-size="86" font-weight="750" letter-spacing="-3">divisions</text>
+        <text x="75" y="423" fill="#aebdce" font-size="24" font-weight="400">Follow events, brackets and timelines.</text>
+        <text x="75" y="461" fill="#aebdce" font-size="24" font-weight="400">Bonk.io football, brought together.</text>
+        <path d="M72 535H1128" stroke="url(#line)" stroke-width="1" opacity=".45"/>
+        <text x="74" y="578" fill="#bdcbdc" font-size="19" font-weight="500">bonk-football-division.com</text>
+        <text x="1126" y="578" fill="#8192aa" font-size="13" font-weight="600" letter-spacing="2.5" text-anchor="end">BONK.IO FOOTBALL</text>
+    </g>
+</svg>

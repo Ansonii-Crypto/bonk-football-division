@@ -70,6 +70,14 @@ test("public assessments replace each page of cards and load the selected assess
     assert.match(window.document.querySelector(".assessment-card-link").textContent, /Beta/);
     assert.match(window.document.querySelector(".pagination-status").textContent, /Page 2 of 2/);
     assert.ok(calls.some(url => url.pathname === "/api/assessments" && url.searchParams.get("page") === "2"));
+    const copied = [];
+    Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: { writeText: async value => { copied.push(value); } } });
+    window.document.querySelector(".assessment-copy-view").click();
+    await tick();
+    const sharedView = new URL(copied[0]);
+    assert.equal(sharedView.pathname, "/assessments");
+    assert.equal(sharedView.hash, "");
+    assert.equal(sharedView.searchParams.get("page"), "2");
     const routed = new Promise(resolve => window.addEventListener("hashchange", resolve, { once: true }));
     window.document.querySelector(".assessment-card-link").click();
     await routed;

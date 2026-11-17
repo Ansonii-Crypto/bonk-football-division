@@ -43,6 +43,12 @@ The Divisions page invites tournament hosts to work with the division. A host re
 
 Bonk.io account sign-in is available through **Account**. Assessments are stored in this site's D1 database and appear publicly when created. No player records or competitions are fabricated, and the existing Bonk Critic database is not connected or imported.
 
+## Sharing pages
+
+Public pages have shareable paths such as `/assessments`, `/classes`, and `/divisions`. Individual assessment records use `/assessments/ID`, published events use `/divisions/ID`, and class panels use `/classes/weaver` (or another class name). Existing hash links still open normally; the address bar and copy-link buttons now include the server-readable page path. Assessment view links retain their filters.
+
+The Worker supplies Open Graph and Twitter preview metadata in the initial HTML, with page-specific images from `assets/social/`. Assessment previews show public name, tier, points, class and date. Division previews use only the published snapshot, including when a manager shares the link. Draft-only divisions return a generic unavailable preview, and account, profile and management pages never include account details. Editable preview image sources are in `assets/social/source/`.
+
 ## Local development
 
 Open `code/html/index.html` directly, or install the deployment tools and run the Cloudflare preview:
@@ -108,7 +114,7 @@ The **Admin center** link appears only for the initial administrator. Its connec
 
 ## Divisions and events
 
-Open **Divisions** to create a division as the site administrator or find events assigned to your account. Each event has its own `#divisions/ID` page inside the normal site navigation. New divisions start as private drafts; published events appear in the public list.
+Open **Divisions** to create a division as the site administrator or find events assigned to your account. Each event has its own `/divisions/ID` page inside the normal site navigation. New divisions start as private drafts; published events appear in the public list.
 
 The showcase leads with published events in cover cards. **All**, **Live**, **Upcoming** and **Completed** filter the server-paged list, with up to 12 cards loaded at a time. Upcoming includes events accepting registrations. Live events appear first in the combined list, followed by upcoming dates and completed events. Cards show published dates, match size and entrant counts. Private drafts and unpublished changes appear as compact management-only rows underneath, with six rows per page; the host invitation sits last.
 

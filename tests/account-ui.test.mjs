@@ -139,6 +139,48 @@ test("sign-in restores the assessment view captured after filters changed the UR
     assert.equal(window.document.querySelector(".assessment-search").value, "keeper");
 });
 
+test("popstate-only traversal restores its page and preserves the latest filtered login return", async t => {
+    const window = await page(t, async path => Response.json({ account: path === "/api/account" ? null : verifiedAccount }),
+        "https://bonk-football-division.com/#classes");
+    const settle = async () => { await new Promise(resolve => setTimeout(resolve, 10)); await tick(); };
+    const previous = window.location.href;
+    window.history.replaceState(null, "", "/assessments#assessments");
+    window.dispatchEvent(new window.PopStateEvent("popstate"));
+    await settle();
+    assert.equal(window.document.querySelector("#app").dataset.page, "assessments");
+    const search = window.document.querySelector(".assessment-search");
+    search.value = "keeper";
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const previousView = window.location.hash;
+    assert.match(previousView, /q=keeper/);
+    assert.notEqual(window.BonkRoutes.lastSyncedUrl, previous);
+    window.history.replaceState(null, "", "/account#account");
+    window.dispatchEvent(new window.PopStateEvent("popstate"));
+    await settle();
+    assert.equal(window.document.querySelector("#app").dataset.page, "account");
+    const returned = nextRoute(window);
+    fillAndSubmit(window);
+    await returned;
+    assert.equal(window.location.hash, previousView);
+    assert.equal(window.document.querySelector(".assessment-search").value, "keeper");
+});
+
+test("popstate followed by hashchange renders a destination only once", async t => {
+    const window = await page(t, async () => Response.json({ account: null }),
+        "https://bonk-football-division.com/#classes");
+    const previous = window.location.href;
+    window.history.replaceState(null, "", "/account#account");
+    const destination = window.location.href;
+    window.dispatchEvent(new window.PopStateEvent("popstate"));
+    window.dispatchEvent(new window.HashChangeEvent("hashchange", { oldURL: previous, newURL: destination }));
+    const form = window.document.querySelector(".account-form");
+    assert.ok(form);
+    form.elements.username.value = "Unsubmitted text";
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(window.document.querySelector(".account-form"), form);
+    assert.equal(form.elements.username.value, "Unsubmitted text");
+});
+
 test("a signed-out profile can lead to sign-in and return to the same profile", async t => {
     const window = await page(t, async path => Response.json({ account: path === "/api/account" ? null : verifiedAccount }),
         "https://bonk-football-division.com/#profile");

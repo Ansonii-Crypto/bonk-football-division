@@ -1,5 +1,6 @@
 import { handleAssessmentRequest, searchKnownBonkAccounts } from "./assessments.js";
 import { divisionRequestMethods, handleDivisionRequest } from "./divisions.js";
+import { handlePreviewRequest } from "./previews.js";
 
 const SESSION_COOKIE = "__Host-bfd_session";
 const SESSION_SECONDS = 24 * 60 * 60;
@@ -292,7 +293,7 @@ export default {
     async fetch(request, env) {
         const url = new URL(request.url);
         if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) {
-            return env.ASSETS.fetch(request);
+            return await handlePreviewRequest(request, env) || env.ASSETS.fetch(request);
         }
         try {
             return await api(request, env, url);

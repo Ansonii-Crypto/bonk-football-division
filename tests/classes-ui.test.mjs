@@ -4,8 +4,8 @@ import test from "node:test";
 import { Script } from "node:vm";
 import { JSDOM } from "jsdom";
 
-function page(t) {
-    const dom = new JSDOM("<!doctype html><html><body></body></html>", { runScripts: "outside-only" });
+function page(t, options = {}) {
+    const dom = new JSDOM("<!doctype html><html><body></body></html>", { runScripts: "outside-only", ...(options.url ? { url: options.url } : {}) });
     t.after(() => dom.window.close());
     const { window } = dom;
     window.HTMLMediaElement.prototype.pause = () => {};
@@ -17,9 +17,13 @@ function page(t) {
         this.removeAttribute("open");
         this.dispatchEvent(new window.Event("close"));
     };
+    if (options.url) {
+        new Script(readFileSync(new URL("../code/javascript/share-routes.js", import.meta.url), "utf8"))
+            .runInContext(dom.getInternalVMContext());
+    }
     new Script(readFileSync(new URL("../code/javascript/classes.js", import.meta.url), "utf8"))
         .runInContext(dom.getInternalVMContext());
-    window.document.body.append(window.renderClassesPage());
+    window.document.body.append(window.renderClassesPage(options.initialClass ?? null));
     return window;
 }
 
@@ -90,4 +94,26 @@ test("related classes replace the open panel and dismissal returns focus to the 
     document.querySelector(".class-panel-close").click();
     assert.equal(panel.open, false);
     assert.equal(document.activeElement, trigger);
+});
+
+test("class share links open the requested playstyle and keep the public path in sync without trapping navigation", async t => {
+    const window = page(t, { url: "https://bonk-football-division.com/classes/weaver", initialClass: "weaver" });
+    const { document } = window;
+    await new Promise(resolve => setImmediate(resolve));
+    const panel = document.querySelector(".class-panel");
+    assert.equal(panel.open, true);
+    assert.equal(document.querySelector("#class-panel-title").textContent, "Weaver");
+    document.querySelector('[data-relationship="strong"] .class-relationship-link').click();
+    assert.equal(window.location.pathname, "/classes/bulwark");
+    assert.equal(window.location.hash, "#classes/bulwark");
+    assert.equal(window.BonkRoutes.shareUrl(), "https://bonk-football-division.com/classes/bulwark");
+    document.querySelector(".class-panel-close").click();
+    assert.equal(window.location.pathname, "/classes");
+    assert.equal(window.location.hash, "#classes");
+    assert.equal(panel.open, false);
+    cardButton(document, "Weaver").click();
+    window.location.hash = "#assessments";
+    window.closeClassPanel();
+    assert.equal(window.location.hash, "#assessments", "route cleanup keeps the destination chosen by the visitor");
+    assert.equal(panel.open, false);
 });

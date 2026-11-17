@@ -153,6 +153,7 @@ function createNavigation() {
 
 function renderPage() {
     window.closeClassPanel?.();
+    window.BonkRoutes?.sync();
 
     const requestedHash = window.location.hash.slice(1);
     const queryStart = requestedHash.indexOf("?");
@@ -169,6 +170,11 @@ function renderPage() {
             title: "Division",
             render: () => window.BonkDivisions.renderDivision(requestedRoute.slice("divisions/".length))
         };
+    }
+
+    if (requestedRoute.startsWith("classes/")) {
+        pageId = "classes";
+        page = { ...pages.classes, render: () => renderClassesPage(requestedRoute.slice("classes/".length)) };
     }
 
     if (requestedRoute.startsWith("assessments/")) {
@@ -287,7 +293,7 @@ let loginReturnHash = null;
 function returnableHash(hash) {
     const route = hash.slice(1).split("?", 1)[0];
     return ["home", "assessments", "players", "tiers", "classes", "divisions", "profile", "admin"].includes(route)
-        || route.startsWith("assessments/") || route.startsWith("divisions/");
+        || route.startsWith("assessments/") || route.startsWith("divisions/") || route.startsWith("classes/");
 }
 
 window.addEventListener("bonk-login-success", () => {
@@ -316,7 +322,11 @@ document.querySelector(".skip-link").addEventListener("click", event => {
     app.focus();
 });
 
+let historyTraversalTimer = null;
+let lastRenderedUrl = window.location.href;
+
 window.addEventListener("hashchange", event => {
+    window.clearTimeout(historyTraversalTimer);
     if (window.location.hash === "#account") {
         try {
             const previousHash = new URL(event.oldURL).hash;
@@ -329,9 +339,24 @@ window.addEventListener("hashchange", event => {
     }
     closeNavigation();
     renderPage();
+    lastRenderedUrl = window.location.href;
     if (["account", "profile", "admin", "divisions"].includes(app.dataset.page)) {
         window.BonkAccount.refresh();
     }
     app.focus({ preventScroll: true });
     window.scrollTo(0, 0);
+});
+
+window.addEventListener("popstate", () => {
+    window.clearTimeout(historyTraversalTimer);
+    const destination = window.location.href;
+    // Cross-path traversal after replaceState can emit only popstate. Allow a
+    // normal hashchange to run first, keeping existing section cleanup and
+    // avoiding a second render of the newly opened page.
+    historyTraversalTimer = window.setTimeout(() => {
+        if (window.location.href !== destination) return;
+        const previous = window.BonkRoutes?.lastSyncedUrl || lastRenderedUrl;
+        if (new URL(previous).hash === window.location.hash) return;
+        window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL: previous, newURL: destination }));
+    }, 0);
 });
