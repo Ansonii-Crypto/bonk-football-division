@@ -1,7 +1,7 @@
 "use strict";
 
 (() => {
-    const sectionNames = { general: "Event information", appearance: "Background", participation: "Participation", timeline: "Timeline", teams: "Teams and players", bracket: "Tournament bracket", campaigns: "Campaigns", referendums: "Referendums" };
+    const sectionNames = { general: "Event information", appearance: "Background", banner: "Banner", participation: "Participation", timeline: "Timeline", teams: "Teams and players", bracket: "Tournament bracket", campaigns: "Campaigns", referendums: "Referendums" };
     const sectionDescriptions = {
         participation: "Match format and how players can take part.",
         timeline: "Dates, milestones and event announcements.",
@@ -86,8 +86,9 @@
     }
 
     function applyCover(node, appearance) {
-        const colour = /^#[0-9a-f]{6}$/i.test(appearance?.backgroundColor || "") ? appearance.backgroundColor : "";
-        const image = backgroundImage(appearance?.backgroundImage);
+        const value = appearance?.bannerColor ?? appearance?.backgroundColor ?? "";
+        const colour = /^#[0-9a-f]{6}$/i.test(value) ? value : "";
+        const image = backgroundImage(appearance?.bannerImage ?? appearance?.backgroundImage);
         node.classList.toggle("division-cover--custom", Boolean(colour));
         node.classList.toggle("division-cover--image", Boolean(image));
         if (colour) node.style.setProperty("--division-cover-colour", colour);
@@ -324,13 +325,28 @@
         let managementEvents = null;
         let toolsOpen = false;
         let clearSectionRail = () => {};
+        const fieldBindings = new Map();
+        let textSelection = null;
+        let formatPanel = null;
+        let formatFeedback = "";
 
-        function editable(key) { return model?.permissions?.editSections?.includes(key.startsWith("custom:") ? "custom" : key); }
+        function editable(key) { return model?.permissions?.editSections?.includes(key === "banner" ? "appearance" : key.startsWith("custom:") ? "custom" : key); }
         function customSection(key) { return draft.customSections?.find(item => `custom:${item.id}` === key); }
         function snapshot() { return { content: clone(draft), dirty, message }; }
-        function sameContent(first, second) { return JSON.stringify(first) === JSON.stringify(second); }
-        function blockingEditor() { return Boolean(activeEditor && activeEditor.key !== "appearance"); }
-        function backgroundChanged() { return activeEditor?.key === "appearance" && !sameContent(activeEditor.before.content, draft); }
+        function sameContent(first, second) {
+            const comparable = value => {
+                const result = clone(value);
+                const appearance = result.appearance || { backgroundColor: "", backgroundImage: "" };
+                result.appearance = { ...appearance, bannerColor: appearance.bannerColor ?? appearance.backgroundColor ?? "",
+                    bannerImage: appearance.bannerImage ?? appearance.backgroundImage ?? "" };
+                if (result.textStyles && !Object.keys(result.textStyles).length) delete result.textStyles;
+                return result;
+            };
+            return JSON.stringify(comparable(first)) === JSON.stringify(comparable(second));
+        }
+        function settingsEditorOpen() { return ["appearance", "banner"].includes(activeEditor?.key); }
+        function inlineEditorOpen() { return Boolean(activeEditor && !settingsEditorOpen()); }
+        function editorChanged() { return activeEditor && !sameContent(activeEditor.before.content, draft); }
         function remember(content) {
             if (sameContent(content, draft)) return;
             if (!undoHistory.length || !sameContent(undoHistory.at(-1), content)) undoHistory.push(clone(content));
@@ -342,26 +358,33 @@
             editRevision += 1;
             message = dirty ? `${text} · save before publishing` : `${text} · matches the saved draft`;
         }
-        function parkBackground() {
-            if (activeEditor?.key !== "appearance" || pending) return false;
+        function parkEditor() {
+            if (!activeEditor || pending) return false;
             remember(activeEditor.before.content);
             activeEditor = null;
             backgroundEvents?.abort();
             selected = "";
+            textSelection = null; fieldBindings.clear(); formatFeedback = "";
             dirty = !sameContent(draft, model.content);
             if (!dirty) message = "Preview matches the saved draft";
             return true;
         }
-        function closeBackground() {
-            if (activeEditor?.key !== "appearance" || pending) return;
+        function closeSettings() {
+            if (!settingsEditorOpen() || pending) return;
             const position = editorScrollPosition();
-            parkBackground();
+            parkEditor();
+            paintAtScrollPosition(position);
+        }
+        function finishEditing() {
+            if (!activeEditor || pending) return;
+            const position = editorScrollPosition();
+            parkEditor();
             paintAtScrollPosition(position);
         }
         function travelHistory(backwards) {
-            if (pending || blockingEditor()) return;
+            if (pending) return;
             const position = editorScrollPosition();
-            parkBackground();
+            parkEditor();
             const from = backwards ? undoHistory : redoHistory;
             const to = backwards ? redoHistory : undoHistory;
             if (!from.length) return;
@@ -442,6 +465,10 @@
             });
         }
         function change() {
+            if (draft.textStyles && window.DivisionText) {
+                const fields = window.DivisionText.fields(draft);
+                for (const path of Object.keys(draft.textStyles)) if (!Object.hasOwn(fields, path)) delete draft.textStyles[path];
+            }
             editRevision += 1;
             dirty = true;
             message = "Unsaved changes · save before publishing";
@@ -456,11 +483,11 @@
             if (notice) notice.textContent = message || (model?.publishedAt
                 ? model.version === model.publishedVersion ? "Draft preview · published version is up to date" : "Draft preview · saved changes are not published"
                 : "Private draft preview · publish when the event is ready");
-            for (const action of container.querySelectorAll(".division-management-actions .division-button")) action.disabled = pending || blockingEditor();
-            if (saveButton) saveButton.disabled = pending || blockingEditor() || !dirty;
-            if (publishButton) publishButton.disabled = pending || blockingEditor() || dirty;
-            if (undoButton) undoButton.disabled = pending || blockingEditor() || (!undoHistory.length && !backgroundChanged());
-            if (redoButton) redoButton.disabled = pending || blockingEditor() || !redoHistory.length || backgroundChanged();
+            for (const action of container.querySelectorAll(".division-management-actions .division-button")) action.disabled = pending;
+            if (saveButton) saveButton.disabled = pending || !dirty;
+            if (publishButton) publishButton.disabled = pending || dirty;
+            if (undoButton) undoButton.disabled = pending || (!undoHistory.length && !editorChanged());
+            if (redoButton) redoButton.disabled = pending || !redoHistory.length || editorChanged();
             for (const dot of container.querySelectorAll(".division-section-dot")) dot.disabled = pending;
             if (editorFields) editorFields.disabled = pending;
             if (inlineSave) inlineSave.disabled = pending || !dirty;
@@ -468,6 +495,7 @@
             const close = toolPanel?.querySelector(".division-tool-close");
             if (close) close.disabled = pending;
             if (inlineStatus) inlineStatus.textContent = activeEditor?.error || (pending ? "Saving section…" : "");
+            updateFormattingPanel();
             if (pending) {
                 for (const control of preview?.querySelectorAll(".division-section-control, .division-section-insert, .division-add-section, .division-add-panel button") || []) control.disabled = true;
             }
@@ -480,14 +508,15 @@
             preview.replaceChildren(window.DivisionView.render(draft, {
                 editing, selectedSection: selected, editableSections: model.permissions?.editSections || [],
                 onSection: selectSection,
+                onBanner() { selectSection("banner"); },
                 onAddSection(afterKey) { selectSection("add", afterKey); },
                 onMoveSection(key, offset) {
-                    if (blockingEditor() || pending) return;
+                    if (pending) return;
                     const order = window.DivisionView.sectionOrder(draft);
                     const index = order.indexOf(key);
                     const next = index + offset;
                     if (!editable(key) || index < 0 || next < 0 || next >= order.length) return;
-                    closeBackground();
+                    finishEditing();
                     const before = clone(draft);
                     [order[index], order[next]] = [order[next], order[index]];
                     draft.sectionOrder = order;
@@ -498,8 +527,8 @@
                     control?.focus({ preventScroll: true });
                 },
                 onRemoveSection(key) {
-                    if (!editable(key) || blockingEditor() || pending) return;
-                    closeBackground();
+                    if (!editable(key) || pending) return;
+                    finishEditing();
                     const before = clone(draft);
                     draft.sectionOrder = window.DivisionView.sectionOrder(draft).filter(value => value !== key);
                     remember(before);
@@ -508,8 +537,7 @@
                     preview.querySelector(".division-add-section")?.focus({ preventScroll: true });
                 }
             }));
-            if (blockingEditor()) {
-                for (const control of preview.querySelectorAll(".division-section-control, .division-section-insert, .division-add-section")) control.disabled = true;
+            if (inlineEditorOpen()) {
                 const target = [...preview.querySelectorAll("[data-section]")].find(node => node.dataset.section === activeEditor.key);
                 if (target) target.replaceChildren(renderInlineEditor());
             } else if (pickerOpen && editing) {
@@ -529,14 +557,11 @@
         }
         function selectSection(key, afterKey = null) {
             if (pending) return;
-            const position = activeEditor?.key === "appearance" ? editorScrollPosition() : null;
-            parkBackground();
-            if (activeEditor) {
-                if (activeEditor.key === key) return;
-                activeEditor.error = "Save or cancel this section before opening another.";
-                updateNotice();
-                return;
-            }
+            if (activeEditor?.key === key) return;
+            const position = activeEditor ? editorScrollPosition() : null;
+            const clicked = previewSections().find(node => node.dataset.section === key);
+            if (position && clicked) position.anchors.unshift({ key, edge: "top", viewportY: clicked.getBoundingClientRect().top });
+            parkEditor();
             if (key === "add") {
                 insertionAfter = afterKey || window.DivisionView.sectionOrder(draft).at(-1) || "general";
                 pickerOpen = true; toolMode = "";
@@ -552,7 +577,7 @@
             pickerOpen = false;
             toolMode = "";
             activeEditor = { key, before, insertedAfter, error: "" };
-            if (key === "appearance") toolsOpen = true;
+            if (settingsEditorOpen()) toolsOpen = true;
             if (position) paintAtScrollPosition(position);
             else paint();
         }
@@ -564,27 +589,28 @@
             markRestored("Section changes cancelled");
             activeEditor = null;
             selected = "";
+            textSelection = null; formatFeedback = "";
             paintAtScrollPosition(position);
         }
         function renderInlineEditor() {
-            const form = element("form", "division-inline-editor");
+            const form = element("form", `division-inline-editor${settingsEditorOpen() ? " division-appearance-editor" : ""}`);
             const heading = selected.startsWith("custom:") ? "Text section" : sectionNames[selected];
             form.setAttribute("aria-label", `Edit ${heading}`);
             const header = element("div", "division-inline-heading");
             const title = element("div");
             title.append(element("p", "division-eyebrow", "Editing section"), element("h2", "", heading));
             header.append(title);
-            if (selected === "appearance") header.append(button("Close panel", closeBackground, "division-tool-close"));
+            if (settingsEditorOpen()) header.append(button("Close panel", closeSettings, "division-tool-close"));
             form.append(header);
-            if (selected === "appearance") form.append(element("p", "division-background-hint", "Click outside, choose another section or press Escape to close. Changes stay in your draft until saved; Cancel reverts them."));
+            if (settingsEditorOpen()) form.append(element("p", "division-background-hint", "Changes preview immediately. Close to keep them in your draft, or Cancel to revert."));
             editorFields = element("fieldset", "division-inline-fields");
             form.append(editorFields);
             paintInspector();
             inlineStatus = element("p", "division-inline-status");
             inlineStatus.setAttribute("role", "status");
-            const actions = element("div", "division-inline-actions");
+            const actions = element("div", `division-inline-actions${settingsEditorOpen() ? " division-appearance-actions" : ""}`);
             inlineCancel = button("Cancel", cancelSection, "division-inline-cancel");
-            inlineSave = element("button", "division-button division-button--primary division-inline-save", "Save section");
+            inlineSave = element("button", "division-button division-button--primary division-inline-save", settingsEditorOpen() ? "Save settings" : "Save section");
             inlineSave.type = "submit";
             actions.append(inlineCancel, inlineSave);
             form.append(inlineStatus, actions);
@@ -642,7 +668,7 @@
             } finally {
                 pending = false;
                 if (section.isConnected) {
-                    if (!blockingEditor()) paintPreview();
+                    if (!inlineEditorOpen()) paintPreview();
                     updateNotice();
                 }
             }
@@ -673,6 +699,7 @@
             saveButton = null; publishButton = null; notice = null;
             undoButton = null; redoButton = null;
             editorFields = null; inlineStatus = null; inlineSave = null; inlineCancel = null; toolPanel = null;
+            formatPanel = null;
             container.classList.toggle("division-event-container--managed", Boolean(model.permissions?.editSections?.length));
             if (model.permissions?.editSections?.length) {
                 const slot = element("div", `division-management-slot${toolsOpen ? " is-open" : ""}`);
@@ -700,22 +727,25 @@
                 modes.append(view, edit);
                 const pageActions = element("div", "division-page-actions");
                 pageActions.append(element("p", "division-tool-group-label", "Publication"));
-                saveButton = button("Save draft", () => { closeBackground(); void save(); }, "division-button--primary");
+                saveButton = button("Save draft", () => { finishEditing(); void save(); }, "division-button--primary");
                 pageActions.append(saveButton);
                 if (model.permissions.publish) {
-                    publishButton = button("Publish", () => { closeBackground(); void publish(); }, "division-button--warm"); pageActions.append(publishButton);
-                    if (model.publishedAt) { const unpublishButton = button("Unpublish", () => { closeBackground(); void unpublish(); }, "division-button--danger"); unpublishButton.disabled = pending; pageActions.append(unpublishButton); }
+                    const publication = element("div", "division-publication-actions");
+                    publishButton = button("Publish", () => { finishEditing(); void publish(); }, "division-button--warm"); publication.append(publishButton);
+                    if (model.publishedAt) publication.append(button("Unpublish", () => { finishEditing(); void unpublish(); }, "division-button--danger"));
+                    pageActions.append(publication);
                 }
                 const settings = element("div", "division-settings-actions");
                 settings.append(element("p", "division-tool-group-label", "Appearance & access"));
                 if (editable("appearance")) {
-                    const background = button("Background", () => { if (activeEditor?.key === "appearance") closeBackground(); else beginSection("appearance"); });
+                    const background = button("Background", () => { if (activeEditor?.key === "appearance") closeSettings(); else selectSection("appearance"); });
                     background.setAttribute("aria-expanded", String(activeEditor?.key === "appearance"));
                     settings.append(background);
+                    settings.append(button("Banner", () => { if (activeEditor?.key === "banner") closeSettings(); else selectSection("banner"); }));
                 }
                 if (model.permissions.manageMembers) settings.append(button("Management roles", () => {
-                    const position = activeEditor?.key === "appearance" ? editorScrollPosition() : null;
-                    parkBackground(); toolMode = toolMode === "members" ? "" : "members"; pickerOpen = false;
+                    const position = activeEditor ? editorScrollPosition() : null;
+                    parkEditor(); toolMode = toolMode === "members" ? "" : "members"; pickerOpen = false;
                     toolsOpen = true;
                     if (position) paintAtScrollPosition(position); else paint();
                 }));
@@ -724,14 +754,16 @@
                 undoButton = button("Undo", () => travelHistory(true));
                 redoButton = button("Redo", () => travelHistory(false));
                 history.append(undoButton, redoButton);
-                actions.append(modes, pageActions, settings, history);
+                formatPanel = renderFormattingPanel();
+                actions.append(modes, formatPanel, pageActions, settings, history);
                 const reload = button("Reload saved draft", () => {
                     if (!dirty || window.confirm("Discard the unsaved preview changes and reload the saved draft?")) void load();
                 });
-                reload.disabled = pending; actions.append(reload);
+                const secondary = element("div", "division-secondary-actions");
+                secondary.append(reload); actions.append(secondary);
                 actions.append(sharingTools());
                 toolbar.append(identity, actions);
-                if (activeEditor?.key === "appearance" || toolMode === "members") {
+                if (settingsEditorOpen() || toolMode === "members") {
                     toolPanel = element("div", "division-tool-panel");
                     if (toolMode === "members") {
                         toolPanel.append(element("h2", "", "Management roles"));
@@ -746,7 +778,7 @@
             preview = element("div", "division-live-preview"); workspace.append(preview);
             container.append(workspace);
             paintPreview();
-            if (activeEditor?.key === "appearance") toolPanel.append(renderInlineEditor());
+            if (settingsEditorOpen()) toolPanel.append(renderInlineEditor());
             updateNotice();
             watchBackgroundDismissal();
             watchManagementDismissal();
@@ -775,7 +807,7 @@
             }, { signal: events.signal });
             document.addEventListener("keydown", event => {
                 if (!section.isConnected) { events.abort(); return; }
-                if (event.key !== "Escape" || event.defaultPrevented || activeEditor?.key === "appearance") return;
+                if (event.key !== "Escape" || event.defaultPrevented || settingsEditorOpen()) return;
                 event.preventDefault();
                 setToolsOpen(false, true);
             }, { signal: events.signal });
@@ -783,9 +815,110 @@
         }
 
         function setMode(value) {
-            const position = activeEditor?.key === "appearance" ? editorScrollPosition() : null;
-            parkBackground(); editing = value; pickerOpen = false; toolMode = "";
+            const position = activeEditor ? editorScrollPosition() : null;
+            parkEditor(); editing = value; pickerOpen = false; toolMode = "";
             if (position) paintAtScrollPosition(position); else paint();
+        }
+
+        function renderFormattingPanel() {
+            const panel = element("section", "division-format-panel");
+            panel.setAttribute("aria-label", "Text style");
+            panel.append(element("h2", "", "Text style"), element("p", "division-format-selection", "Select text in a field to format it."));
+            const all = button("Select whole field", () => {
+                const binding = fieldBindings.get(textSelection?.path);
+                if (!binding) return;
+                binding.control.setSelectionRange(0, binding.control.value.length);
+                selectTextField(binding);
+            }, "division-format-all");
+            panel.append(all);
+            const toolbar = element("div", "division-format-toolbar");
+            toolbar.setAttribute("role", "group"); toolbar.setAttribute("aria-label", "Text emphasis");
+            for (const [property, label, title] of [["bold", "B", "Bold"], ["italic", "I", "Italic"], ["underline", "U", "Underline"]]) {
+                const toggle = button(label, () => applyTextStyle({ [property]: !selectedStyle(property) }), "division-format-toggle");
+                toggle.dataset.formatProperty = property;
+                toggle.setAttribute("aria-label", title); toggle.setAttribute("aria-pressed", "false");
+                toggle.addEventListener("pointerdown", event => event.preventDefault());
+                toolbar.append(toggle);
+            }
+            panel.append(toolbar);
+            const fields = element("div", "division-format-fields");
+            const font = inputField(fields, "Font", "default", value => applyTextStyle({ font: value }), {
+                options: [["default", "Default"], ["sans", "Sans serif"], ["serif", "Serif"], ["mono", "Monospace"]], noChange: true
+            });
+            font.dataset.formatProperty = "font";
+            const size = inputField(fields, "Size", "normal", value => applyTextStyle({ size: value }), {
+                options: [["small", "Small"], ["normal", "Normal"], ["large", "Large"]], noChange: true
+            });
+            size.dataset.formatProperty = "size";
+            const colour = inputField(fields, "Text colour", "#e2eff7", value => applyTextStyle({ color: value }), { type: "color", noChange: true });
+            colour.dataset.formatProperty = "color";
+            panel.append(fields, button("Clear formatting", () => applyTextStyle({ bold: null, italic: null, underline: null, color: null, font: null, size: null }), "division-format-reset"));
+            const feedback = element("p", "division-format-feedback"); feedback.setAttribute("role", "status");
+            panel.append(feedback);
+            return panel;
+        }
+
+        function selectTextField(binding) {
+            if (!binding.control.isConnected) return;
+            textSelection = { path: binding.path, start: binding.control.selectionStart ?? 0, end: binding.control.selectionEnd ?? 0 };
+            formatFeedback = "";
+            updateFormattingPanel();
+        }
+
+        function selectedStyle(property) {
+            if (!textSelection || textSelection.start >= textSelection.end) return undefined;
+            const { path, start, end } = textSelection;
+            const runs = (draft.textStyles?.[path] || []).filter(run => run.start < end && run.end > start);
+            let cursor = start;
+            let value;
+            for (const run of runs) {
+                if (run.start > cursor || !Object.hasOwn(run, property)) return undefined;
+                if (cursor === start) value = run[property];
+                else if (run[property] !== value) return undefined;
+                cursor = Math.max(cursor, run.end);
+                if (cursor >= end) return value;
+            }
+            return undefined;
+        }
+
+        function updateFormattingPanel() {
+            if (!formatPanel) return;
+            formatPanel.hidden = !inlineEditorOpen();
+            const binding = fieldBindings.get(textSelection?.path);
+            const hasField = Boolean(binding?.control.isConnected && binding.control.value.length);
+            const hasRange = hasField && textSelection.start < textSelection.end;
+            const selection = formatPanel.querySelector(".division-format-selection");
+            selection.textContent = hasRange ? `${binding.label} · ${textSelection.end - textSelection.start} characters selected`
+                : hasField ? `${binding.label} · select some text or the whole field` : "Select text in a field to format it.";
+            for (const control of formatPanel.querySelectorAll("button, input, select")) {
+                control.disabled = pending || (control.classList.contains("division-format-all") ? !hasField : !hasRange);
+            }
+            for (const toggle of formatPanel.querySelectorAll(".division-format-toggle")) toggle.setAttribute("aria-pressed", String(selectedStyle(toggle.dataset.formatProperty) === true));
+            formatPanel.querySelector('[data-format-property="font"]').value = selectedStyle("font") || "default";
+            formatPanel.querySelector('[data-format-property="size"]').value = selectedStyle("size") || "normal";
+            formatPanel.querySelector('[data-format-property="color"]').value = selectedStyle("color") || "#e2eff7";
+            formatPanel.querySelector(".division-format-feedback").textContent = formatFeedback;
+            for (const field of fieldBindings.values()) {
+                const runs = draft.textStyles?.[field.path] || [];
+                field.preview.hidden = !runs.length && !(hasRange && textSelection.path === field.path);
+                window.DivisionText?.render(field.copy, field.control.value, runs);
+            }
+        }
+
+        function applyTextStyle(patch) {
+            const binding = fieldBindings.get(textSelection?.path);
+            if (pending || !binding || textSelection.start >= textSelection.end || !window.DivisionText) return;
+            try {
+                const runs = window.DivisionText.apply(draft.textStyles?.[binding.path], binding.control.value, textSelection.start, textSelection.end, patch);
+                draft.textStyles ||= {};
+                if (runs.length) draft.textStyles[binding.path] = runs;
+                else delete draft.textStyles[binding.path];
+                formatFeedback = "";
+                change();
+            } catch (error) {
+                formatFeedback = error instanceof RangeError ? "This field has too many separate styles. Clear some formatting before adding more." : "Unable to apply this text style.";
+                updateFormattingPanel();
+            }
         }
 
         function sharingTools() {
@@ -853,7 +986,7 @@
                 const dot = event.detail > 0 ? nearestDot(event.clientY) : event.target.closest(".division-section-dot");
                 const key = dot?.dataset.sectionTarget;
                 if (!key) return;
-                const wasBackground = parkBackground();
+                const wasBackground = settingsEditorOpen() && parkEditor();
                 if (wasBackground) paint();
                 scrollRestoreRevision += 1;
                 const target = previewSections().find(item => item.dataset.section === key);
@@ -907,21 +1040,22 @@
 
         function watchBackgroundDismissal() {
             backgroundEvents?.abort();
-            if (activeEditor?.key !== "appearance") return;
+            if (!settingsEditorOpen()) return;
             const events = new AbortController();
             backgroundEvents = events;
             document.addEventListener("click", event => {
                 if (!section.isConnected) { events.abort(); return; }
                 if (pending || !(event.target instanceof Element)) return;
                 if (event.target.closest(".division-management-slot")) return;
-                closeBackground();
+                closeSettings();
             }, { signal: events.signal });
             document.addEventListener("keydown", event => {
                 if (!section.isConnected) { events.abort(); return; }
                 if (event.key !== "Escape" || pending) return;
                 event.preventDefault();
-                closeBackground();
-                const background = [...container.querySelectorAll("button")].find(node => node.textContent === "Background");
+                const settingsName = sectionNames[activeEditor.key];
+                closeSettings();
+                const background = [...container.querySelectorAll("button")].find(node => node.textContent === settingsName);
                 const focusTarget = background?.getClientRects().length ? background : container.querySelector(".division-management-toggle");
                 focusTarget?.focus({ preventScroll: true });
             }, { signal: events.signal });
@@ -943,24 +1077,51 @@
             if (options.min !== undefined) control.min = options.min;
             if (options.max !== undefined) control.max = options.max;
             control.value = value ?? ""; control.disabled = Boolean(options.disabled);
-            control.addEventListener(options.options || options.type === "number" ? "change" : "input", () => { onInput(control.value); if (!options.noChange) change(); });
-            wrapper.append(control); parent.append(wrapper); return control;
+            let previousText = String(value ?? "");
+            control.addEventListener(options.options || options.type === "number" ? "change" : "input", () => {
+                onInput(control.value);
+                if (options.formatPath && window.DivisionText) {
+                    const runs = window.DivisionText.rebase(draft.textStyles?.[options.formatPath], previousText, control.value);
+                    if (runs.length) { draft.textStyles ||= {}; draft.textStyles[options.formatPath] = runs; }
+                    else if (draft.textStyles) delete draft.textStyles[options.formatPath];
+                    previousText = control.value;
+                    const binding = fieldBindings.get(options.formatPath);
+                    if (binding) selectTextField(binding);
+                }
+                if (!options.noChange) change();
+            });
+            wrapper.append(control); parent.append(wrapper);
+            if (options.formatPath && window.DivisionText) {
+                control.dataset.formatPath = options.formatPath;
+                const preview = element("div", "division-formatted-preview");
+                preview.hidden = true;
+                const copy = element("div", "division-formatted-preview-copy");
+                preview.append(element("span", "division-formatted-preview-label", "Formatted preview"), copy);
+                wrapper.append(preview);
+                const binding = { path: options.formatPath, label, control, preview, copy };
+                fieldBindings.set(options.formatPath, binding);
+                for (const event of ["select", "keyup", "mouseup", "focus"]) control.addEventListener(event, () => selectTextField(binding));
+            }
+            return control;
         }
         function paintInspector() {
             if (!editorFields || !activeEditor) return;
+            fieldBindings.clear();
             editorFields.replaceChildren();
             const body = editorFields;
             if (selected === "general") editGeneral(body);
             if (selected === "appearance") editAppearance(body);
+            if (selected === "banner") editAppearance(body, true);
             if (selected === "participation") editParticipation(body);
             if (["timeline", "campaigns", "referendums"].includes(selected)) editCollection(body, selected);
             if (selected === "teams") editTeams(body);
             if (selected === "bracket") editBracket(body);
             if (selected.startsWith("custom:")) editCustomSection(body);
+            updateFormattingPanel();
         }
         function editSectionPicker(body) {
             const order = window.DivisionView.sectionOrder(draft);
-            const available = Object.keys(sectionDescriptions).filter(key => editable(key) && !order.includes(key));
+            const available = Object.keys(sectionDescriptions).filter(key => editable(key));
             const choices = element("div", "division-section-picker");
             function addToPage(key, before = snapshot()) {
                 if (pending || activeEditor) return;
@@ -995,44 +1156,52 @@
                 }
             }
             for (const key of available) {
-                const choice = button("", () => addToPage(key), "division-section-choice");
+                const present = order.includes(key);
+                const choice = button("", () => present ? selectSection(key) : addToPage(key), `division-section-choice${present ? " division-section-choice--present" : ""}`);
                 choice.dataset.addSection = key;
-                choice.append(element("strong", "", sectionNames[key]), element("span", "", sectionDescriptions[key]));
+                choice.append(element("strong", "", sectionNames[key]), element("span", "", present ? "Already on this page · edit section" : sectionDescriptions[key]));
                 choices.append(choice);
             }
             if (!choices.childElementCount) choices.append(element("p", "division-muted", "All available sections are on the page."));
-            body.append(choices, element("p", "division-editor-note", "Remove a section to hide it from the page. Its content is kept so you can add it again later."));
+            body.append(choices, element("p", "division-editor-note", "Built-in sections appear once per page. Choose an existing section to edit it, or add a missing section here. Text sections can be added more than once."));
         }
         function editCustomSection(body) {
             const item = customSection(selected);
             if (!item) return;
-            inputField(body, "Section title", item.title, value => { item.title = value; }, { maxLength: 120 });
-            inputField(body, "Section text", item.description, value => { item.description = value; }, { multiline: true, rows: 8, maxLength: 6000 });
+            inputField(body, "Section title", item.title, value => { item.title = value; }, { maxLength: 120, formatPath: `custom.${item.id}.title` });
+            inputField(body, "Section text", item.description, value => { item.description = value; }, { multiline: true, rows: 8, maxLength: 6000, formatPath: `custom.${item.id}.description` });
         }
         function editGeneral(body) {
             const fields = model.permissions.generalFields || (model.role === "editor" ? ["description"] : ["name", "summary", "description", "status", "startDate", "endDate"]);
-            if (fields.includes("name")) inputField(body, "Event name", draft.name, value => { draft.name = value; }, { maxLength: 120 });
-            if (fields.includes("summary")) inputField(body, "Short introduction", draft.summary, value => { draft.summary = value; }, { multiline: true, maxLength: 300 });
-            if (fields.includes("description")) inputField(body, "About this event", draft.description, value => { draft.description = value; }, { multiline: true, rows: 6, maxLength: 5000 });
+            if (fields.includes("name")) inputField(body, "Event name", draft.name, value => { draft.name = value; }, { maxLength: 120, formatPath: "general.name" });
+            if (fields.includes("summary")) inputField(body, "Short introduction", draft.summary, value => { draft.summary = value; }, { multiline: true, maxLength: 300, formatPath: "general.summary" });
+            if (fields.includes("description")) inputField(body, "About this event", draft.description, value => { draft.description = value; }, { multiline: true, rows: 6, maxLength: 5000, formatPath: "general.description" });
             if (fields.includes("status")) inputField(body, "Event status", draft.status, value => { draft.status = value; }, { options: [["upcoming", "Upcoming"], ["registration", "Registration"], ["live", "Live"], ["completed", "Completed"]] });
             if (fields.includes("startDate")) inputField(body, "Start date", draft.startDate, value => { draft.startDate = value; }, { type: "date" });
             if (fields.includes("endDate")) inputField(body, "End date", draft.endDate, value => { draft.endDate = value; }, { type: "date" });
         }
-        function editAppearance(body) {
+        function editAppearance(body, banner = false) {
             const appearance = draft.appearance || { backgroundColor: "", backgroundImage: "" };
-            const colour = inputField(body, "Background colour", appearance.backgroundColor || "#080c14", value => {
-                draft.appearance = { ...appearance, backgroundColor: value };
-                appearance.backgroundColor = value;
+            const colourKey = banner ? "bannerColor" : "backgroundColor";
+            const imageKey = banner ? "bannerImage" : "backgroundImage";
+            const freezeBanner = () => {
+                appearance.bannerColor ??= appearance.backgroundColor || "";
+                appearance.bannerImage ??= appearance.backgroundImage || "";
+            };
+            const colour = inputField(body, banner ? "Banner colour" : "Background colour", (banner ? appearance.bannerColor ?? appearance.backgroundColor : appearance.backgroundColor) || "#080c14", value => {
+                freezeBanner(); appearance[colourKey] = value;
+                draft.appearance = { ...appearance };
             }, { type: "color" });
             colour.classList.add("division-colour-picker");
-            const image = inputField(body, "Background image URL", appearance.backgroundImage, value => {
-                draft.appearance = { ...appearance, backgroundImage: value };
-                appearance.backgroundImage = value;
+            const image = inputField(body, banner ? "Banner image URL" : "Background image URL", banner ? appearance.bannerImage ?? appearance.backgroundImage : appearance.backgroundImage, value => {
+                freezeBanner(); appearance[imageKey] = value;
+                draft.appearance = { ...appearance };
             }, { type: "url", maxLength: 2048 });
             image.placeholder = "https://example.com/background.jpg";
-            body.append(element("p", "division-editor-note", "Paste a direct HTTPS image link. The image fills the event background; the colour is used underneath it."));
-            body.append(button("Reset background", () => {
-                draft.appearance = { backgroundColor: "", backgroundImage: "" };
+            body.append(element("p", "division-editor-note", banner ? "Use a direct HTTPS image link for the banner and showcase cover." : "Use a direct HTTPS image link for the page background."));
+            body.append(button(banner ? "Reset banner" : "Reset background", () => {
+                freezeBanner(); appearance[colourKey] = ""; appearance[imageKey] = "";
+                draft.appearance = { ...appearance };
                 change();
                 paintInspector();
             }));
@@ -1041,7 +1210,7 @@
             inputField(body, "Participation mode", draft.participation.mode, value => { draft.participation.mode = value; if (value === "solo") draft.participation.teamSize = 1; paintInspector(); }, { options: [["solo", "Individual players"], ["teams", "Team battles"]] });
             inputField(body, "Players per side", draft.participation.teamSize, value => { draft.participation.teamSize = Number(value); }, { options: [["1", "1 vs 1"], ["2", "2 vs 2"], ["3", "3 vs 3"], ["4", "4 vs 4"]], disabled: draft.participation.mode === "solo" });
             inputField(body, "Participation availability", draft.participation.registration, value => { draft.participation.registration = value; }, { options: [["closed", "Closed"], ["open", "Open"], ["invite-only", "Invitation only"]] });
-            inputField(body, "Participation details", draft.participation.description, value => { draft.participation.description = value; }, { multiline: true, maxLength: 2000 });
+            inputField(body, "Participation details", draft.participation.description, value => { draft.participation.description = value; }, { multiline: true, maxLength: 2000, formatPath: "participation.description" });
             body.append(element("p", "division-editor-note", "This describes how to take part. Registration submissions are not collected by this template."));
         }
         function editCollection(body, key) {
@@ -1049,9 +1218,9 @@
             draft[key].forEach((item, index) => {
                 const entry = element("div", "division-editor-entry"); const heading = element("div", "division-editor-entry-heading");
                 heading.append(element("strong", "", `${key === "timeline" ? "Stage" : "Item"} ${index + 1}`), button("Remove", () => { draft[key].splice(index, 1); change(); paintInspector(); }, "division-button--danger")); entry.append(heading);
-                inputField(entry, key === "referendums" ? "Question or title" : "Title", item.title, value => { item.title = value; }, { maxLength: key === "referendums" ? 200 : 120 });
+                inputField(entry, key === "referendums" ? "Question or title" : "Title", item.title, value => { item.title = value; }, { maxLength: key === "referendums" ? 200 : 120, formatPath: `${key}.${item.id}.title` });
                 if (key === "timeline") inputField(entry, "Date", item.date, value => { item.date = value; }, { type: "date" });
-                inputField(entry, "Description", item.description, value => { item.description = value; }, { multiline: true, maxLength: key === "timeline" ? 1000 : 2000 });
+                inputField(entry, "Description", item.description, value => { item.description = value; }, { multiline: true, maxLength: key === "timeline" ? 1000 : 2000, formatPath: `${key}.${item.id}.description` });
                 if (key === "referendums") {
                     inputField(entry, "Status", item.status, value => { item.status = value; }, { options: [["planned", "Planned"], ["open", "Open"], ["closed", "Closed"]] });
                     inputField(entry, "Choices, one per line", item.options.join("\n"), value => { item.options = value.split("\n").filter(Boolean); }, { multiline: true, maxLength: 1000 });
@@ -1072,7 +1241,7 @@
             draft.teams.forEach((team, index) => {
                 const entry = element("div", "division-editor-entry"); const heading = element("div", "division-editor-entry-heading");
                 heading.append(element("strong", "", `Seed ${index + 1}`), button("Remove", () => { draft.teams.splice(index, 1); draft.results = {}; change(); paintInspector(); }, "division-button--danger")); entry.append(heading);
-                inputField(entry, draft.participation.mode === "solo" ? "Entrant name" : "Team name", team.name, value => { team.name = value; }, { maxLength: 100 });
+                inputField(entry, draft.participation.mode === "solo" ? "Entrant name" : "Team name", team.name, value => { team.name = value; }, { maxLength: 100, formatPath: `teams.${team.id}.name` });
                 inputField(entry, "Bonk usernames, one per line", team.players.map(player => player.username).join("\n"), value => { team.players = value.split("\n").filter(name => name.trim()).map(username => ({ username, bonkId: null })); }, { multiline: true, maxLength: 500 });
                 body.append(entry);
             });

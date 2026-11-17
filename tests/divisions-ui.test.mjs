@@ -129,7 +129,7 @@ test("an administrator creates a private division, saves inline sections and pub
     assert.equal(button(window, "Publish").disabled, true, "publishing waits for the open editor");
     window.document.querySelector(".division-inline-save").click();
     await tick();
-    assert.deepEqual(model.content.appearance, { backgroundColor: "#384c68", backgroundImage: "https://example.com/football.jpg" });
+    assert.deepEqual(model.content.appearance, { backgroundColor: "#384c68", backgroundImage: "https://example.com/football.jpg", bannerColor: "", bannerImage: "" });
     button(window, "Publish").click();
     await tick();
     assert.equal(model.publishedVersion, 3);
@@ -150,7 +150,7 @@ test("a public division opens its published event content without management con
     assert.equal(window.document.querySelector(".division-page-background").style.backgroundColor, "rgb(56, 76, 104)");
 });
 
-test("cancelling inline edits restores the section without writing or opening a second editor", async t => {
+test("switching sections keeps local edits and cancelling restores only the current section", async t => {
     let writes = 0;
     const model = modelFor();
     const window = await page(t, async (path, options) => {
@@ -163,14 +163,17 @@ test("cancelling inline edits restores the section without writing or opening a 
     const description = field(window, "About this event");
     description.closest("label").dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
     assert.equal(window.document.querySelector(".division-inline-status").textContent, "", "clicking a label in the current section does not request a different editor");
-    input(window, description, "Discard this description");
+    input(window, description, "Keep this description when switching");
     window.document.querySelector('[data-section="participation"] .division-section-edit').click();
     assert.equal(window.document.querySelectorAll(".division-inline-editor").length, 1);
-    assert.equal(window.document.querySelector(".division-inline-editor").closest("[data-section]").dataset.section, "general");
+    assert.equal(window.document.querySelector(".division-inline-editor").closest("[data-section]").dataset.section, "participation");
+    input(window, field(window, "Participation details"), "Discard these participation changes");
     window.document.querySelector(".division-inline-cancel").click();
     assert.equal(window.document.querySelector(".division-inline-editor"), null);
+    assert.match(window.document.querySelector('[data-section="general"]').textContent, /Keep this description when switching/);
+    assert.doesNotMatch(window.document.querySelector(".division-live-preview").textContent, /Discard these participation changes/);
+    button(window, "Undo").click();
     assert.match(window.document.querySelector('[data-section="general"]').textContent, /Original description/);
-    assert.doesNotMatch(window.document.querySelector(".division-live-preview").textContent, /Discard this description/);
     assert.equal(button(window, "Save draft").disabled, true);
     assert.equal(writes, 0);
 });
@@ -321,18 +324,20 @@ test("a section can be inserted between existing sections and cancelled without 
     assert.equal(document.querySelector('[data-section^="custom:"]'), null);
 });
 
-test("background previews update and reset the banner without replacing the active input", async t => {
-    const model = modelFor();
+test("banner previews update and reset independently without replacing the active input", async t => {
+    const model = modelFor({ ...content(), appearance: { backgroundColor: "#384c68", backgroundImage: "" } });
     const window = await page(t, async () => Response.json({ division: model }), "#divisions/1");
     const { document } = window;
-    button(window, "Background").click();
-    const colour = field(window, "Background colour");
+    button(window, "Edit").click();
+    document.querySelector(".division-banner-edit").click();
+    const colour = field(window, "Banner colour");
     input(window, colour, "#407159");
     assert.equal(document.querySelector(".division-event-cover").style.getPropertyValue("--division-cover-colour"), "#407159");
-    assert.equal(field(window, "Background colour"), colour);
-    input(window, field(window, "Background image URL"), "https://example.com/field.jpg");
+    assert.equal(field(window, "Banner colour"), colour);
+    assert.equal(document.querySelector(".division-page-background").style.backgroundColor, "rgb(56, 76, 104)");
+    input(window, field(window, "Banner image URL"), "https://example.com/field.jpg");
     assert.ok(document.querySelector(".division-event-cover.division-cover--image"));
-    button(window, "Reset background").click();
+    button(window, "Reset banner").click();
     const cover = document.querySelector(".division-event-cover");
     assert.equal(cover.style.getPropertyValue("--division-cover-image"), "");
     assert.equal(cover.classList.contains("division-cover--image"), false);
@@ -423,7 +428,7 @@ test("background controls can close in several ways without losing local changes
     button(window, "Save draft").click();
     await tick();
     assert.equal(writes.length, 1);
-    assert.deepEqual(model.content.appearance, { backgroundColor: "#407159", backgroundImage: "https://example.com/local-field.jpg" });
+    assert.deepEqual(model.content.appearance, { backgroundColor: "#407159", backgroundImage: "https://example.com/local-field.jpg", bannerColor: "#384c68", bannerImage: "" });
     assert.equal(model.publishedAt, null);
 });
 
@@ -910,4 +915,97 @@ test("copy event link copies the division URL and supplies selectable text when 
     assert.equal(fallback.readOnly, true);
     assert.equal(fallback.selectionStart, 0);
     assert.equal(fallback.selectionEnd, fallback.value.length);
+});
+
+test("the section picker offers built-in sections even when they already appear on the page", async t => {
+    const model = modelFor({ ...content(), sectionOrder: ["participation", "timeline", "teams", "bracket", "campaigns", "referendums"] });
+    let writes = 0;
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") writes += 1;
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    button(window, "Edit").click();
+    document.querySelector(".division-add-section").click();
+    for (const type of ["participation", "timeline", "teams", "bracket", "campaigns", "referendums"]) {
+        assert.match(document.querySelector(`[data-add-section="${type}"]`).textContent, /Already on this page/);
+    }
+    document.querySelector('[data-add-section="timeline"]').click();
+    assert.ok(document.querySelector('[data-section="timeline"] .division-inline-editor'));
+    document.querySelector(".division-inline-cancel").click();
+    document.querySelector('[data-section="timeline"] .division-section-remove').click();
+    document.querySelector(".division-add-section").click();
+    assert.doesNotMatch(document.querySelector('[data-add-section="timeline"]').textContent, /Already on this page/);
+    document.querySelector('[data-add-section="timeline"]').click();
+    assert.ok(document.querySelector('[data-section="timeline"] .division-inline-editor'));
+    assert.equal(writes, 0);
+});
+
+test("selected text formatting stays live, survives section switching and saves through the draft action", async t => {
+    let model = modelFor();
+    const writes = [];
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            const body = JSON.parse(options.body); writes.push(body);
+            model = { ...model, content: body.content, version: body.version + 1 };
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    button(window, "Edit").click(); editSection(window);
+    const description = field(window, "About this event");
+    description.setSelectionRange(0, 8);
+    description.dispatchEvent(new window.Event("select", { bubbles: true }));
+    const panel = document.querySelector(".division-format-panel");
+    const bold = panel.querySelector('[data-format-property="bold"]');
+    assert.equal(bold.disabled, false);
+    bold.click();
+    const font = panel.querySelector('[data-format-property="font"]');
+    font.value = "serif"; font.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const colour = panel.querySelector('[data-format-property="color"]');
+    input(window, colour, "#fe2f44");
+    const preview = description.closest("label").querySelector(".division-formatted-preview span.division-formatted-text");
+    assert.equal(preview.textContent, "Original");
+    assert.equal(preview.style.fontWeight, "700");
+    assert.match(preview.style.fontFamily, /Georgia/);
+    assert.equal(preview.style.color, "rgb(254, 47, 68)");
+    assert.equal(field(window, "About this event"), description, "formatting keeps the native input and selection context");
+    assert.equal(button(window, "Save draft").disabled, false);
+    assert.equal(button(window, "Undo").disabled, false);
+    assert.equal(button(window, "Background").disabled, false);
+    assert.equal(button(window, "View").disabled, false);
+    editSection(window, "participation");
+    input(window, field(window, "Participation details"), "Changes to cancel");
+    document.querySelector(".division-inline-cancel").click();
+    const styled = document.querySelector('[data-text-path="general.description"] .division-formatted-text');
+    assert.equal(styled.textContent, "Original");
+    button(window, "Save draft").click(); await tick();
+    assert.equal(writes.length, 1);
+    assert.deepEqual(model.content.textStyles["general.description"], [{ start: 0, end: 8, bold: true, color: "#fe2f44", font: "serif" }]);
+    assert.equal(model.content.participation.description, "");
+    assert.equal(model.publishedAt, null);
+});
+
+test("typing rebases text styles and Cancel restores formatting together with the text", async t => {
+    let model = modelFor({ ...content(), textStyles: { "general.description": [{ start: 0, end: 8, bold: true }] } });
+    const window = await page(t, async (path, options) => {
+        if (options.method === "PUT") {
+            const body = JSON.parse(options.body); model = { ...model, content: body.content, version: body.version + 1 };
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    button(window, "Edit").click(); editSection(window);
+    input(window, field(window, "About this event"), "New Original description");
+    document.querySelector(".division-inline-save").click(); await tick();
+    assert.deepEqual(model.content.textStyles["general.description"], [{ start: 4, end: 12, bold: true }]);
+    editSection(window);
+    const description = field(window, "About this event");
+    description.setSelectionRange(4, 12); description.dispatchEvent(new window.Event("select", { bubbles: true }));
+    document.querySelector(".division-format-reset").click();
+    document.querySelector(".division-inline-cancel").click();
+    assert.equal(document.querySelector('[data-text-path="general.description"] .division-formatted-text').textContent, "Original");
+    assert.equal(button(window, "Save draft").disabled, true);
 });

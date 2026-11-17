@@ -55,6 +55,18 @@
     margin-left: 0;
 }
 
+.division-section-edit--keyboard:not(:focus) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
 .division-section-control {
     margin-left: auto;
     padding: 0.4rem 0.7rem;
@@ -179,12 +191,53 @@
     border-bottom: 1px solid #3f5b70;
 }
 
+.division-event-cover::before,
+.division-event-cover::after {
+    pointer-events: none;
+}
+
+.division-banner-edit {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    color: #132333;
+    background: rgb(255 255 255 / 30%);
+    border: 0;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 140ms ease;
+}
+
+.division-event-cover:hover .division-banner-edit,
+.division-banner-edit:focus-visible {
+    opacity: 1;
+}
+
+.division-banner-edit:focus-visible {
+    outline: 2px solid #c1edff;
+    outline-offset: -4px;
+}
+
+.division-banner-edit svg {
+    filter: drop-shadow(0 1px 1px rgb(255 255 255 / 50%));
+    pointer-events: none;
+}
+
 .division-event-overview {
     padding: clamp(1.5rem, 4vw, 2.5rem);
 }
 
 .division-event-overview > .division-section-heading {
     margin-bottom: 1rem;
+}
+
+.division-event-overview > .division-section-heading:has(> .division-section-actions > .division-section-edit--keyboard:only-child):not(:focus-within) {
+    margin-bottom: 0;
 }
 
 .division-event-hero:has(> .division-inline-editor) {
@@ -684,7 +737,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .division-event-section--editable {
+    .division-event-section--editable,
+    .division-banner-edit {
         transition: none;
+    }
+}
+
+@media (hover: none), (pointer: coarse) {
+    .division-banner-edit {
+        opacity: 1;
+        background: rgb(255 255 255 / 16%);
     }
 }

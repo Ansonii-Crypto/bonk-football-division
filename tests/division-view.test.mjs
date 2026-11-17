@@ -7,8 +7,10 @@ import { JSDOM } from "jsdom";
 function preview(t) {
     const dom = new JSDOM("<!doctype html><html><body></body></html>", { runScripts: "outside-only" });
     t.after(() => dom.window.close());
-    new Script(readFileSync(new URL("../code/javascript/division-view.js", import.meta.url), "utf8"))
-        .runInContext(dom.getInternalVMContext());
+    for (const name of ["division-text.js", "division-view.js"]) {
+        new Script(readFileSync(new URL(`../code/javascript/${name}`, import.meta.url), "utf8"))
+            .runInContext(dom.getInternalVMContext());
+    }
     return dom.window;
 }
 
@@ -224,4 +226,62 @@ test("edit insertion points identify the section they follow and stay hidden fro
     assert.equal(DivisionView.render(content).querySelector(".division-section-insert, .division-add-section"), null);
     const restricted = DivisionView.render(content, { editing: true, editableSections: ["general"], onAddSection() {} });
     assert.equal(restricted.querySelector(".division-section-insert, .division-add-section"), null);
+});
+
+test("banner editing has its own permitted pen control and does not open the event information editor", t => {
+    const { DivisionView } = preview(t);
+    const content = {
+        name: "Cup", sectionOrder: [], participation: { teamSize: 1 },
+        appearance: { backgroundColor: "#112233", backgroundImage: "https://example.com/page.jpg", bannerColor: "#445566", bannerImage: "https://example.com/banner.jpg" }
+    };
+    const calls = [];
+    const rendered = DivisionView.render(content, {
+        editing: true, editableSections: ["general", "appearance"],
+        onSection: key => calls.push(key), onBanner: () => calls.push("banner")
+    });
+    const cover = rendered.querySelector(".division-event-cover");
+    assert.equal(cover.getAttribute("aria-hidden"), null, "interactive cover remains in the accessibility tree");
+    assert.equal(cover.style.getPropertyValue("--division-cover-colour"), "#445566");
+    assert.match(cover.style.getPropertyValue("--division-cover-image"), /banner\.jpg/);
+    const pen = cover.querySelector("button.division-banner-edit");
+    assert.equal(pen.getAttribute("aria-label"), "Edit banner");
+    assert.ok(pen.querySelector("svg path"));
+    pen.click();
+    assert.deepEqual(calls, ["banner"]);
+    const keyboardEdit = rendered.querySelector(".division-section-edit--keyboard");
+    assert.equal(keyboardEdit.type, "button");
+    keyboardEdit.click();
+    assert.deepEqual(calls, ["banner", "general"], "keyboard users retain a native edit action");
+    assert.equal(DivisionView.render(content, { editing: true, editableSections: ["general"], onBanner() {} }).querySelector(".division-banner-edit"), null);
+    assert.equal(DivisionView.render(content, { editableSections: ["appearance"], onBanner() {} }).querySelector(".division-banner-edit"), null);
+    const cleared = DivisionView.render({ ...content, appearance: { ...content.appearance, bannerColor: "", bannerImage: "" } }).querySelector(".division-event-cover");
+    assert.equal(cleared.style.getPropertyValue("--division-cover-colour"), "");
+    assert.equal(cleared.style.getPropertyValue("--division-cover-image"), "", "an explicitly cleared banner does not fall back to the page image");
+});
+
+test("saved field styles appear in the overview, custom sections and roster names as safe text", t => {
+    const { DivisionView } = preview(t);
+    const content = {
+        name: "Football Cup", summary: "A weekend event", description: "<script>not markup</script>",
+        participation: { mode: "teams", teamSize: 4, description: "Bring a team" }, sectionOrder: ["custom:rules", "teams"],
+        teams: [{ id: "north", name: "North", players: [{ username: "Player" }] }],
+        customSections: [{ id: "rules", title: "Match rules", description: "No cheating" }],
+        textStyles: {
+            "general.name": [{ start: 0, end: 8, bold: true, color: "#82c6cb" }],
+            "general.description": [{ start: 0, end: 8, italic: true }],
+            "custom.rules.title": [{ start: 0, end: 5, font: "serif" }],
+            "custom.rules.description": [{ start: 3, end: 11, underline: true }],
+            "teams.north.name": [{ start: 0, end: 5, size: "large" }]
+        }
+    };
+    const rendered = DivisionView.render(content);
+    assert.equal(rendered.querySelector("script"), null);
+    assert.equal(rendered.querySelector("h1").textContent, "Football Cup");
+    assert.equal(rendered.querySelector("h1 span").textContent, "Football");
+    assert.equal(rendered.querySelector("h1 span").style.color, "rgb(130, 198, 203)");
+    assert.match(rendered.querySelector('[data-section="custom:rules"] h2 span').style.fontFamily, /Georgia/);
+    assert.equal(rendered.querySelector('[data-section="custom:rules"] p span').style.textDecorationLine, "underline");
+    assert.equal(rendered.querySelector(".division-entrant h3 span").style.fontSize, "1.2em");
+    assert.equal(rendered.querySelector(".division-event-description").textContent, content.description);
+    assert.equal(rendered.querySelector('[data-text-path="general.name"]').tagName, "H1");
 });

@@ -592,3 +592,146 @@ test("draft filtering keeps unpublished changes paged and scoped to the manager'
     const publicList = await (await request(env, "/api/divisions?publication=drafts")).json();
     assert.deepEqual(publicList.divisions.map(division => division.id), [changed.id], "public query parameters cannot expose private drafts");
 });
+
+test("text formatting is stored in the private draft and published as a separate structured snapshot", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    let division = await create(env, admin);
+    assert.equal(division.content.textStyles, undefined, "legacy plain text does not gain formatting on read");
+    const textStyles = {
+        "general.name": [{ start: 0, end: 8, bold: true, color: "#95e1ff", font: "serif", size: "large" }],
+        "general.description": [{ start: 0, end: 4, italic: true }, { start: 5, end: 9, underline: true, font: "mono" }],
+        "timeline.opening.title": [{ start: 0, end: 7, bold: true }],
+        "campaigns.welcome.description": [{ start: 0, end: 4, color: "#ffc09d" }],
+        "referendums.format.title": [{ start: 0, end: 4, font: "sans", size: "small" }],
+        "custom.rules.title": [{ start: 0, end: 5, underline: true }],
+        "teams.blue.name": [{ start: 0, end: 4, bold: true }],
+        "participation.description": [{ start: 0, end: 5, italic: true }]
+    };
+    division = await save(env, admin, division, {
+        description: "Play fair and enjoy football.",
+        timeline: [{ id: "opening", title: "Opening match", date: "", description: "" }],
+        campaigns: [{ id: "welcome", title: "Welcome", description: "Join the cup." }],
+        referendums: [{ id: "format", title: "Next format?", description: "", status: "planned", options: ["Solo", "Teams"] }],
+        customSections: [{ id: "rules", title: "Rules", description: "Play fair." }],
+        teams: [{ id: "blue", name: "Blue team", players: [{ username: "BluePlayer", bonkId: null }] }],
+        participation: { ...division.content.participation, description: "Enter with your team." },
+        textStyles
+    });
+    assert.deepEqual(division.content.textStyles, textStyles);
+    assert.equal((await request(env, `/api/divisions/${division.id}`)).status, 404);
+    division = await publish(env, admin, division);
+    const published = (await (await request(env, `/api/divisions/${division.id}`)).json()).division.content;
+    assert.deepEqual(published.textStyles, textStyles);
+    const draftStyles = { ...textStyles, "general.description": [{ start: 0, end: 9, color: "#ffffff", bold: true }] };
+    division = await save(env, admin, division, { textStyles: draftStyles });
+    assert.deepEqual(division.content.textStyles, draftStyles);
+    assert.deepEqual((await (await request(env, `/api/divisions/${division.id}`)).json()).division.content.textStyles, textStyles);
+    assert.equal((await (await request(env, "/api/divisions")).json()).divisions[0].textStyles, undefined,
+        "directory summaries do not include the detailed formatting map");
+});
+
+test("formatting rejects unsupported properties, stale paths and invalid or overlapping text ranges", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    let division = await create(env, admin);
+    division = await save(env, admin, division, { description: "😀 Fair play matters.", customSections: [{ id: "rules", title: "Rules", description: "x".repeat(600) }] });
+    const run = { start: 0, end: 2, bold: true };
+    const invalid = [
+        null, [], "bold", { "__proto__.name": [run] }, { "general.status": [run] },
+        { "custom.missing.title": [run] }, { "teams.rules.title": [run] }, { "custom.rules.name": [run] },
+        { "general.description": null }, { "general.description": { start: 0, end: 2 } },
+        { "general.description": [{ start: -1, end: 2 }] }, { "general.description": [{ start: 0.5, end: 2 }] },
+        { "general.description": [{ start: 2, end: 2 }] }, { "general.description": [{ start: 2, end: 200 }] },
+        { "general.description": [{ start: 0, end: 1 }] }, { "general.description": [{ start: 1, end: 2 }] },
+        { "general.description": [{ start: 2, end: 6 }, { start: 5, end: 8 }] },
+        { "general.description": [{ start: 6, end: 8 }, { start: 2, end: 5 }] },
+        { "general.description": [{ ...run, bold: false }] }, { "general.description": [{ ...run, italic: "true" }] },
+        { "general.description": [{ ...run, color: "red" }] }, { "general.description": [{ ...run, color: "#fff" }] },
+        { "general.description": [{ ...run, color: "url(https://example.com)" }] },
+        { "general.description": [{ ...run, font: "Arial; background: red" }] },
+        { "general.description": [{ ...run, size: "100px" }] }, { "general.description": [{ ...run, html: "<b>text</b>" }] },
+        { "general.description": [{ ...run, style: "font-weight: bold" }] },
+        { "custom.rules.description": Array.from({ length: 101 }, (_, index) => ({ start: index * 2, end: index * 2 + 1, bold: true })) },
+        Object.fromEntries(Array.from({ length: 201 }, (_, index) => [`custom.item${index}.title`, []]))
+    ];
+    for (const textStyles of invalid) {
+        const response = await request(env, `/api/manage/divisions/${division.id}`, {
+            version: division.version, content: { ...division.content, textStyles }
+        }, { cookie: admin, method: "PUT" });
+        assert.equal(response.status, 400, JSON.stringify(textStyles));
+    }
+    division = await save(env, admin, division, { textStyles: { "general.description": [run], "custom.rules.description": [] } });
+    assert.deepEqual(division.content.textStyles["general.description"], [run], "whole UTF-16 code points remain valid");
+    const customSections = Array.from({ length: 11 }, (_, index) => ({ id: `rules${index}`, title: "Rules", description: "x".repeat(200) }));
+    const styles = Object.fromEntries(customSections.map((section, index) => [`custom.${section.id}.description`,
+        Array.from({ length: index === 10 ? 1 : 100 }, (_, offset) => ({ start: offset * 2, end: offset * 2 + 1, bold: true }))]));
+    assert.equal((await request(env, `/api/manage/divisions/${division.id}`, {
+        version: division.version, content: { ...division.content, customSections, textStyles: styles }
+    }, { cookie: admin, method: "PUT" })).status, 400, "total formatting runs are bounded independently of the per-field limit");
+});
+
+test("editors can format only the text fields they are allowed to edit", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    const editor = await signIn(env, 1001, "Editor");
+    let division = await create(env, admin);
+    await grant(env, admin, division.id, "1001", "editor");
+    division = await save(env, admin, division, {
+        description: "Play fair.",
+        participation: { ...division.content.participation, description: "Roster rules" },
+        campaigns: [{ id: "welcome", title: "Welcome", description: "Join the cup." }],
+        referendums: [{ id: "format", title: "Next format?", description: "", status: "planned", options: ["Solo", "Teams"] }],
+        customSections: [{ id: "rules", title: "Rules", description: "Play fair." }],
+        textStyles: { "general.name": [{ color: "#95e1ff", end: 8, start: 0, bold: true }] }
+    });
+    const permitted = {
+        "general.name": [{ start: 0, end: 8, bold: true, color: "#95e1ff" }],
+        "general.description": [{ start: 0, end: 4, italic: true }],
+        "campaigns.welcome.title": [{ start: 0, end: 7, font: "serif" }],
+        "referendums.format.description": [],
+        "custom.rules.description": [{ start: 0, end: 4, color: "#ffc09d" }]
+    };
+    division = await save(env, editor, division, { textStyles: permitted });
+    assert.deepEqual(division.content.textStyles, permitted, "property order changes do not falsely alter restricted styling");
+    const forbidden = [
+        { ...permitted, "general.name": [{ start: 0, end: 8, color: "#ffffff" }] },
+        { ...permitted, "general.summary": [{ start: 0, end: 4, italic: true }] },
+        { ...permitted, "participation.description": [{ start: 0, end: 6, underline: true }] },
+        Object.fromEntries(Object.entries(permitted).filter(([path]) => path !== "general.name"))
+    ];
+    for (const textStyles of forbidden) {
+        assert.equal((await request(env, `/api/manage/divisions/${division.id}`, {
+            version: division.version, content: { ...division.content, textStyles }
+        }, { cookie: editor, method: "PUT" })).status, 403);
+    }
+    assert.equal((await request(env, `/api/manage/divisions/${division.id}/publish`, { version: division.version }, { cookie: editor })).status, 403);
+});
+
+test("banner appearance can change independently from the page background and remains private until published", async t => {
+    const env = environment(t);
+    const admin = await signIn(env);
+    const editor = await signIn(env, 1001, "Editor");
+    let division = await create(env, admin);
+    await grant(env, admin, division.id, "1001", "editor");
+    const first = { backgroundColor: "#152536", backgroundImage: "https://example.com/page.jpg", bannerColor: "#164c61", bannerImage: "https://example.com/banner.jpg" };
+    division = await save(env, editor, division, { appearance: first });
+    assert.deepEqual(division.content.appearance, first);
+    division = await publish(env, admin, division);
+    const next = { ...first, bannerColor: "#ffc09d", bannerImage: "" };
+    division = await save(env, editor, division, { appearance: next });
+    assert.deepEqual(division.content.appearance, next);
+    assert.deepEqual((await (await request(env, `/api/divisions/${division.id}`)).json()).division.content.appearance, first);
+    assert.deepEqual((await (await request(env, "/api/divisions")).json()).divisions[0].appearance, first);
+    assert.deepEqual((await (await request(env, "/api/manage/divisions", undefined, { cookie: editor })).json()).divisions[0].appearance, next);
+    for (const appearance of [
+        { ...next, bannerColor: "red" }, { ...next, bannerColor: null }, { ...next, bannerImage: "http://example.com/a.jpg" },
+        { ...next, bannerImage: "javascript:alert(1)" }, { ...next, bannerImage: "https://user:password@example.com/a.jpg" },
+        { ...next, bannerImage: "https://example.com/a b.jpg" }, { ...next, bannerImage: "data:image/svg+xml,<svg></svg>" },
+        { ...next, bannerStyle: "position: fixed" }
+    ]) {
+        assert.equal((await request(env, `/api/manage/divisions/${division.id}`, {
+            version: division.version, content: { ...division.content, appearance }
+        }, { cookie: editor, method: "PUT" })).status, 400);
+    }
+});

@@ -2,7 +2,7 @@ const SECTIONS = ["general", "appearance", "participation", "timeline", "teams",
 const OPTIONAL_SECTIONS = ["participation", "timeline", "teams", "bracket", "campaigns", "referendums"];
 const GENERAL_FIELDS = ["name", "summary", "description", "status", "startDate", "endDate"];
 const ROLES = ["director", "organizer", "editor"];
-const CONTENT_FIELDS = [...GENERAL_FIELDS, "appearance", "sectionOrder", "customSections", "participation", "timeline", "campaigns", "referendums", "teams", "results"];
+const CONTENT_FIELDS = [...GENERAL_FIELDS, "appearance", "textStyles", "sectionOrder", "customSections", "participation", "timeline", "campaigns", "referendums", "teams", "results"];
 
 function object(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -24,7 +24,11 @@ function identifier(value) {
 }
 
 function appearance(content) {
-    return { backgroundColor: content.appearance?.backgroundColor ?? "", backgroundImage: content.appearance?.backgroundImage ?? "" };
+    const value = { backgroundColor: content.appearance?.backgroundColor ?? "", backgroundImage: content.appearance?.backgroundImage ?? "" };
+    for (const key of ["bannerColor", "bannerImage"]) {
+        if (Object.hasOwn(content.appearance || {}, key)) value[key] = content.appearance[key];
+    }
+    return value;
 }
 
 function customSections(content) {
@@ -49,24 +53,70 @@ function validAppearance(value) {
     if (value === undefined) {
         return true;
     }
-    if (!object(value) || Object.keys(value).some(key => !["backgroundColor", "backgroundImage"].includes(key))) {
+    if (!object(value) || Object.keys(value).some(key => !["backgroundColor", "backgroundImage", "bannerColor", "bannerImage"].includes(key))) {
         return false;
     }
-    const color = value.backgroundColor === undefined ? "" : value.backgroundColor;
-    const image = value.backgroundImage === undefined ? "" : value.backgroundImage;
-    if (typeof color !== "string" || color !== "" && !/^#[0-9a-f]{6}$/i.test(color)
-        || typeof image !== "string" || image.length > 2048 || /[\u0000-\u0020\u007f]/.test(image)) {
-        return false;
+    for (const [colorKey, imageKey] of [["backgroundColor", "backgroundImage"], ["bannerColor", "bannerImage"]]) {
+        const color = value[colorKey] === undefined ? "" : value[colorKey];
+        const image = value[imageKey] === undefined ? "" : value[imageKey];
+        if (typeof color !== "string" || color !== "" && !/^#[0-9a-f]{6}$/i.test(color)
+            || typeof image !== "string" || image.length > 2048 || /[\u0000-\u0020\u007f]/.test(image)) return false;
+        if (image === "") continue;
+        try {
+            const url = new URL(image);
+            if (!/^https:\/\//i.test(image) || url.protocol !== "https:" || !url.hostname || url.username || url.password) return false;
+        } catch {
+            return false;
+        }
     }
-    if (image === "") {
-        return true;
+    return true;
+}
+
+function styledText(content, path) {
+    if (["general.name", "general.summary", "general.description"].includes(path)) return content[path.slice(8)];
+    if (path === "participation.description") return content.participation.description;
+    const match = /^(timeline|campaigns|referendums|custom|teams)\.([A-Za-z0-9_-]{1,64})\.(title|description|name)$/.exec(path);
+    if (!match || match[1] === "teams" && match[3] !== "name" || match[1] !== "teams" && match[3] === "name") return null;
+    const collection = match[1] === "custom" ? customSections(content) : content[match[1]];
+    return collection.find(item => item.id === match[2])?.[match[3]] ?? null;
+}
+
+function validTextStyles(content) {
+    const styles = content.textStyles;
+    if (styles === undefined) return true;
+    if (!object(styles) || Object.keys(styles).length > 200) return false;
+    let total = 0;
+    const boundary = (value, index) => index === 0 || index === value.length
+        || !(value.charCodeAt(index - 1) >= 0xd800 && value.charCodeAt(index - 1) <= 0xdbff
+            && value.charCodeAt(index) >= 0xdc00 && value.charCodeAt(index) <= 0xdfff);
+    for (const [path, runs] of Object.entries(styles)) {
+        const value = styledText(content, path);
+        if (typeof value !== "string" || !Array.isArray(runs) || runs.length > 100) return false;
+        total += runs.length;
+        if (total > 1000) return false;
+        let end = 0;
+        for (const run of runs) {
+            if (!object(run) || Object.keys(run).some(key => !["start", "end", "bold", "italic", "underline", "color", "font", "size"].includes(key))
+                || !Number.isInteger(run.start) || !Number.isInteger(run.end) || run.start < end || run.end <= run.start || run.end > value.length
+                || !boundary(value, run.start) || !boundary(value, run.end)
+                || ["bold", "italic", "underline"].some(key => run[key] !== undefined && run[key] !== true)
+                || run.color !== undefined && (typeof run.color !== "string" || !/^#[0-9a-f]{6}$/i.test(run.color))
+                || run.font !== undefined && !["default", "sans", "serif", "mono"].includes(run.font)
+                || run.size !== undefined && !["small", "normal", "large"].includes(run.size)) return false;
+            end = run.end;
+        }
     }
-    try {
-        const url = new URL(image);
-        return /^https:\/\//i.test(image) && url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password;
-    } catch {
-        return false;
-    }
+    return true;
+}
+
+function editorTextStyle(path) {
+    return path === "general.description" || /^(campaigns|referendums|custom)\./.test(path);
+}
+
+function restrictedTextStyles(content) {
+    return Object.entries(content.textStyles || {}).filter(([path]) => !editorTextStyle(path))
+        .sort(([first], [second]) => first.localeCompare(second))
+        .map(([path, runs]) => [path, runs.map(run => Object.fromEntries(Object.keys(run).sort().map(key => [key, run[key]])))]);
 }
 
 function date(value) {
@@ -125,7 +175,7 @@ function validateContent(content, positiveBonkId) {
         return "Enter a division name (up to 120 characters), a short summary, and a description up to 6000 characters.";
     }
     if (!validAppearance(content.appearance)) {
-        return "Use a six-digit hex background color and an optional absolute HTTPS image URL without login details.";
+        return "Use six-digit hex background and banner colors and optional absolute HTTPS image URLs without login details.";
     }
     if (content.customSections !== undefined && (!Array.isArray(content.customSections) || content.customSections.length > 20)) {
         return "Use at most 20 custom page sections.";
@@ -224,6 +274,9 @@ function validateContent(content, positiveBonkId) {
             || (result.scoreA !== null || result.scoreB !== null) && (!result.teamAId || !result.teamBId)) {
             return "Bracket results need valid match positions, entrant IDs, and scores from 0 to 99.";
         }
+    }
+    if (!validTextStyles(content)) {
+        return "Use supported text formatting with valid field names and non-overlapping ranges within the field's text.";
     }
     return null;
 }
@@ -471,7 +524,10 @@ export async function handleDivisionRequest(request, env, url, account, readJson
         if (JSON.stringify(restrictedOrder(previous)) !== JSON.stringify(restrictedOrder(body.content))) {
             return json({ error: "Editors can change only campaign, referendum and custom sections in the page layout." }, 403);
         }
-        const allowed = new Set(["description", "appearance", "sectionOrder", "customSections", "campaigns", "referendums"]);
+        if (JSON.stringify(restrictedTextStyles(previous)) !== JSON.stringify(restrictedTextStyles(body.content))) {
+            return json({ error: "Editors can format the description, campaigns, referendums and custom sections only." }, 403);
+        }
+        const allowed = new Set(["description", "appearance", "textStyles", "sectionOrder", "customSections", "campaigns", "referendums"]);
         if (CONTENT_FIELDS.some(key => !allowed.has(key) && JSON.stringify(previous[key]) !== JSON.stringify(body.content[key]))) {
             return json({ error: "Editors can update appearance, the description, campaigns, referendums and custom sections only." }, 403);
         }

@@ -119,17 +119,17 @@
         return value;
     }
 
-    function eventCover(appearance = {}) {
+    function eventCover(appearance = {}, onEdit) {
         const cover = element("div", "division-event-cover division-cover");
-        cover.setAttribute("aria-hidden", "true");
         appearance = appearance && typeof appearance === "object" ? appearance : {};
-        const colour = /^#[0-9a-f]{6}$/i.test(appearance.backgroundColor || "") ? appearance.backgroundColor : "";
+        const value = appearance.bannerColor ?? appearance.backgroundColor;
+        const colour = /^#[0-9a-f]{6}$/i.test(value || "") ? value : "";
         if (colour) {
             cover.style.setProperty("--division-cover-colour", colour);
             cover.classList.add("division-cover--custom");
         }
         try {
-            const image = new URL(appearance.backgroundImage);
+            const image = new URL(appearance.bannerImage ?? appearance.backgroundImage);
             if (image.protocol === "https:" && !image.username && !image.password) {
                 cover.style.setProperty("--division-cover-image", `url(${JSON.stringify(image.href)})`);
                 cover.classList.add("division-cover--custom", "division-cover--image");
@@ -137,6 +137,27 @@
         } catch {
             // Invalid or missing image links use the shared pitch cover.
         }
+        if (typeof onEdit === "function") {
+            const edit = element("button", "division-banner-edit");
+            edit.type = "button";
+            edit.setAttribute("aria-label", "Edit banner");
+            const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            icon.setAttribute("viewBox", "0 0 24 24");
+            icon.setAttribute("width", "30");
+            icon.setAttribute("height", "30");
+            icon.setAttribute("fill", "none");
+            icon.setAttribute("stroke", "currentColor");
+            icon.setAttribute("stroke-width", "1.8");
+            icon.setAttribute("stroke-linecap", "round");
+            icon.setAttribute("stroke-linejoin", "round");
+            icon.setAttribute("aria-hidden", "true");
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("d", "M18.414 2.586a2 2 0 0 1 2.828 2.828L7.5 19.156 3 21l1.844-4.5L18.414 2.586z M16 5l3 3");
+            icon.append(path);
+            edit.append(icon);
+            edit.addEventListener("click", event => { event.stopPropagation(); onEdit(); });
+            cover.append(edit);
+        } else cover.setAttribute("aria-hidden", "true");
         return cover;
     }
 
@@ -150,7 +171,15 @@
         const order = sectionOrder(content);
         const sections = new Map();
 
-        function section(key, title, hasContent = true, hero = false) {
+        function formatted(tag, className, value, path) {
+            const node = element(tag, className);
+            node.dataset.textPath = path;
+            if (window.DivisionText) window.DivisionText.render(node, value, content.textStyles?.[path]);
+            else node.textContent = String(value ?? "");
+            return node;
+        }
+
+        function section(key, title, hasContent = true, hero = false, titlePath = "") {
             if (key !== "general" && !order.includes(key) || !hasContent && !options.editing) {
                 return null;
             }
@@ -158,13 +187,13 @@
             node.dataset.section = key;
             const heading = element("div", "division-section-heading");
             if (title) {
-                heading.append(element("h2", "", title));
+                heading.append(titlePath ? formatted("h2", "", title, titlePath) : element("h2", "", title));
             }
             if (canEdit(key)) {
                 node.classList.add("division-event-section--editable");
                 if (options.selectedSection === key) node.classList.add("division-event-section--selected");
                 const actions = element("div", "division-section-actions");
-                const edit = element("button", "division-section-control division-section-edit", "Edit");
+                const edit = element("button", "division-section-control division-section-edit division-section-edit--keyboard", "Edit");
                 edit.type = "button";
                 edit.setAttribute("aria-label", `Edit ${title || "event information"}`);
                 edit.addEventListener("click", () => options.onSection?.(key));
@@ -205,13 +234,13 @@
         const overview = element("div", "division-event-overview");
         const controls = general.querySelector(".division-section-heading");
         if (controls) overview.append(controls);
-        general.append(eventCover(content.appearance), overview);
+        general.append(eventCover(content.appearance, canEdit("appearance") ? options.onBanner : null), overview);
         const top = element("div", "division-event-eyebrow");
         top.append(element("span", `division-event-status division-event-status--${Object.hasOwn(statusNames, content.status) ? content.status : "upcoming"}`,
             statusNames[content.status] || "Upcoming"), element("span", "", "Bonk.io football"));
-        overview.append(top, element("h1", "division-event-title", content.name || "Untitled division"));
+        overview.append(top, formatted("h1", "division-event-title", content.name || "Untitled division", "general.name"));
         if (hasText(content.summary)) {
-            overview.append(element("p", "division-event-summary", content.summary));
+            overview.append(formatted("p", "division-event-summary", content.summary, "general.summary"));
         } else if (options.editing) {
             overview.append(element("p", "division-edit-prompt", "Add a short introduction to your event."));
         }
@@ -232,7 +261,7 @@
         }
         overview.append(facts);
         if (hasText(content.description)) {
-            overview.append(element("p", "division-event-description", content.description));
+            overview.append(formatted("p", "division-event-description", content.description, "general.description"));
         }
 
         const participationSection = section("participation", "Taking part");
@@ -248,7 +277,7 @@
         }
         participationSection?.append(format);
         if (participationSection && hasText(participation.description)) {
-            participationSection.append(element("p", "division-event-copy", participation.description));
+            participationSection.append(formatted("p", "division-event-copy", participation.description, "participation.description"));
         }
 
         const timeline = list(content.timeline);
@@ -261,9 +290,9 @@
                 for (const stage of timeline) {
                     const item = element("li", "division-timeline-item");
                     const card = element("div", "division-timeline-card");
-                    card.append(element("p", "division-timeline-date", dateLabel(stage.date)), element("h3", "", stage.title || "Untitled stage"));
+                    card.append(element("p", "division-timeline-date", dateLabel(stage.date)), formatted("h3", "", stage.title || "Untitled stage", `timeline.${stage.id}.title`));
                     if (hasText(stage.description)) {
-                        card.append(element("p", "division-event-copy", stage.description));
+                        card.append(formatted("p", "division-event-copy", stage.description, `timeline.${stage.id}.description`));
                     }
                     item.append(card);
                     items.append(item);
@@ -281,7 +310,7 @@
                 const entrants = element("div", "division-entrant-grid");
                 teams.forEach((team, index) => {
                     const card = element("article", "division-entrant");
-                    card.append(element("span", "division-entrant-seed", String(index + 1).padStart(2, "0")), element("h3", "", team.name || "Unnamed entrant"));
+                    card.append(element("span", "division-entrant-seed", String(index + 1).padStart(2, "0")), formatted("h3", "", team.name || "Unnamed entrant", `teams.${team.id}.name`));
                     const roster = element("ul", "division-roster");
                     for (const player of list(team.players).slice(0, 4)) {
                         roster.append(element("li", "", player.username));
@@ -317,7 +346,7 @@
                         for (const [team, score, pending] of [[match.teamA, match.scoreA, match.pendingA], [match.teamB, match.scoreB, match.pendingB]]) {
                             const teamRow = element("div", `division-bracket-team${team && match.winner?.id === team.id ? " division-bracket-team--winner" : ""}${team ? "" : " division-bracket-team--empty"}`);
                             const identity = element("div", "division-bracket-team-name");
-                            identity.append(element("strong", "", team?.name || (pending ? "To be decided" : "Bye")));
+                            identity.append(team ? formatted("strong", "", team.name, `teams.${team.id}.name`) : element("strong", "", pending ? "To be decided" : "Bye"));
                             if (team) {
                                 identity.append(element("span", "", list(team.players).map(player => player.username).join(" · ")));
                             }
@@ -334,7 +363,7 @@
                 const champion = rounds.at(-1)[0].winner;
                 if (champion) {
                     const winner = element("p", "division-bracket-champion");
-                    winner.append(element("span", "", "Winner"), element("strong", "", champion.name));
+                    winner.append(element("span", "", "Winner"), formatted("strong", "", champion.name, `teams.${champion.id}.name`));
                     bracketSection.append(winner);
                 }
             }
@@ -358,9 +387,9 @@
                 if (key === "referendums") {
                     card.append(element("span", "division-referendum-status", ({ planned: "Planned", open: "Open for discussion", closed: "Closed" })[entry.status] || "Planned"));
                 }
-                card.append(element("h3", "", entry.title || "Untitled"));
+                card.append(formatted("h3", "", entry.title || "Untitled", `${key}.${entry.id}.title`));
                 if (hasText(entry.description)) {
-                    card.append(element("p", "division-event-copy", entry.description));
+                    card.append(formatted("p", "division-event-copy", entry.description, `${key}.${entry.id}.description`));
                 }
                 if (key === "referendums" && list(entry.options).length) {
                     const choices = element("ul", "division-referendum-options");
@@ -375,10 +404,10 @@
         }
         for (const custom of list(content.customSections).slice(0, 20)) {
             if (!custom || typeof custom.id !== "string") continue;
-            const node = section(`custom:${custom.id}`, custom.title || "Untitled section");
+            const node = section(`custom:${custom.id}`, custom.title || "Untitled section", true, false, `custom.${custom.id}.title`);
             if (!node) continue;
             if (hasText(custom.description)) {
-                node.append(element("p", "division-event-copy", custom.description));
+                node.append(formatted("p", "division-event-copy", custom.description, `custom.${custom.id}.description`));
             } else if (options.editing) {
                 node.append(element("p", "division-edit-prompt", "Add the text for this section."));
             }

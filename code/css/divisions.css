@@ -558,12 +558,12 @@ textarea.division-field {
 
 .division-management-bar {
     display: grid;
-    gap: 1rem;
+    gap: 0.9rem;
     min-width: 0;
     margin: 0;
-    padding: 1.1rem;
-    background: linear-gradient(150deg, #1a3043, #132333 70%);
-    border: 1px solid #4f6c81;
+    padding: 1rem;
+    background: #142637;
+    border: 1px solid #48667c;
     border-radius: 0.85rem;
     box-shadow: 0 12px 30px rgb(0 0 0 / 12%);
 }
@@ -590,8 +590,8 @@ textarea.division-field {
 }
 
 .division-management-identity {
-    padding-bottom: 1rem;
-    border-bottom: 1px solid #3b5266;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid #344d62;
 }
 
 .division-management-identity strong {
@@ -601,32 +601,36 @@ textarea.division-field {
 
 .division-management-actions {
     display: grid;
-    gap: 0.9rem;
+    gap: 0.85rem;
     min-width: 0;
 }
 
 .division-management-actions .division-button {
     width: 100%;
+    min-height: 2.25rem;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.76rem;
     white-space: normal;
 }
 
 .division-mode-switch {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.25rem;
-    padding: 0.25rem;
-    background: #0c1b29;
-    border: 1px solid #38546a;
-    border-radius: 0.65rem;
+    gap: 0.4rem;
+}
+
+.division-mode-switch > .division-tool-group-label {
+    margin-bottom: 0.2rem;
+    text-align: center;
 }
 
 .division-mode-switch .division-button {
     min-height: 2.25rem;
     padding: 0.45rem 0.6rem;
-    color: #a9c3d5;
-    background: transparent;
-    border-color: transparent;
-    border-radius: 0.4rem;
+    color: #b8d0df;
+    background: #0e1e2d;
+    border-color: #3c5a70;
+    border-radius: 0.45rem;
 }
 
 .division-mode-switch .division-button[aria-pressed="true"] {
@@ -644,11 +648,34 @@ textarea.division-field {
 .division-settings-actions {
     display: grid;
     gap: 0.5rem;
+    min-width: 0;
+}
+
+.division-page-actions {
+    padding-top: 0.8rem;
+    border-top: 1px solid #344d62;
+}
+
+.division-publication-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.division-publication-actions > :only-child {
+    grid-column: 1 / -1;
+}
+
+.division-publication-actions .division-button {
+    min-height: 2.25rem;
+    padding-inline: 0.4rem;
+    font-size: 0.72rem;
 }
 
 .division-settings-actions {
-    padding-top: 0.9rem;
-    border-top: 1px solid #3b5266;
+    padding-top: 0.8rem;
+    border-top: 1px solid #344d62;
 }
 
 .division-settings-actions .division-button {
@@ -660,19 +687,197 @@ textarea.division-field {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.5rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid #344d62;
 }
 
 .division-history-actions .division-button {
-    min-height: 2.35rem;
-    padding: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0.45rem 0.5rem;
+    background: #102131;
+    border-color: #3b576c;
+}
+
+.division-secondary-actions {
+    display: grid;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.division-secondary-actions .division-button,
+.division-management-actions > .division-button:last-child {
+    min-height: 2.25rem;
+    color: #a9c3d5;
+    background: transparent;
+    border-color: #344e63;
+    font-size: 0.71rem;
 }
 
 .division-share-tools {
     display: grid;
     gap: 0.6rem;
     min-width: 0;
-    padding-top: 0.9rem;
-    border-top: 1px solid #3b5266;
+    padding-top: 0.8rem;
+    border-top: 1px solid #344d62;
+}
+
+.division-format-panel {
+    display: grid;
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 0.85rem 0;
+    border-top: 1px solid #344d62;
+    border-bottom: 1px solid #344d62;
+}
+
+.division-format-panel[hidden] {
+    display: none;
+}
+
+.division-format-panel h2 {
+    margin: 0;
+    color: #d7eaf6;
+    font-size: 0.88rem;
+    font-weight: 650;
+}
+
+.division-format-selection {
+    margin: 0;
+    color: #abc4d5;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.division-format-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.division-format-toolbar .division-format-toggle {
+    flex: 1 1 2.5rem;
+    width: auto;
+    min-height: 2.25rem;
+    padding: 0.4rem;
+    color: #cfe4f1;
+    background: #0d1d2b;
+    border-color: #3e5a70;
+    font-size: 0.85rem;
+}
+
+.division-format-toolbar .division-format-toggle[aria-pressed="true"] {
+    color: #dff4ff;
+    background: #2a5067;
+    border-color: #84bed8;
+}
+
+.division-format-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem 0.5rem;
+    min-width: 0;
+}
+
+.division-format-fields label {
+    display: grid;
+    gap: 0.35rem;
+    min-width: 0;
+    color: #b7cede;
+    font-size: 0.72rem;
+}
+
+.division-format-fields > label:first-child {
+    grid-column: 1 / -1;
+}
+
+.division-format-fields .division-field {
+    min-height: 2.25rem;
+    padding: 0.4rem 0.5rem;
+    background: #0d1d2b;
+    border-color: #3e5a70;
+    font-size: 0.74rem;
+}
+
+.division-format-fields input[type="color"] {
+    width: 100%;
+    height: 2.25rem;
+    padding: 0.2rem;
+}
+
+.division-format-panel .division-format-reset {
+    min-height: 2.25rem;
+    padding: 0.4rem 0.5rem;
+    color: #b0c7d7;
+    background: transparent;
+    border-color: #3b546a;
+    font-size: 0.72rem;
+}
+
+.division-format-toggle[data-format-property="bold"] {
+    font-weight: 800;
+}
+
+.division-format-toggle[data-format-property="italic"] {
+    font-style: italic;
+}
+
+.division-format-toggle[data-format-property="underline"] {
+    text-decoration: underline;
+}
+
+.division-format-feedback {
+    margin: 0;
+    color: #ffc498;
+    font-size: 0.72rem;
+    line-height: 1.5;
+}
+
+.division-format-feedback:empty {
+    display: none;
+}
+
+.division-formatted-preview {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 0;
+    margin-top: 0.35rem;
+    padding: 0.85rem;
+    background: #102434;
+    border: 1px solid #3e5b71;
+    border-radius: 0.5rem;
+}
+
+.division-formatted-preview[hidden] {
+    display: none;
+}
+
+.division-formatted-preview-label {
+    margin: 0;
+    color: #96b5c9;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.division-formatted-preview-copy {
+    margin: 0;
+    color: #d8e9f4;
+    font-size: 0.88rem;
+    font-weight: 400;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.division-formatted-preview-copy * {
+    user-select: text;
+    -webkit-user-select: text;
 }
 
 .division-share-status,
@@ -710,12 +915,6 @@ textarea.division-field {
 .division-share-fallback:focus {
     outline: none;
     border-color: #92c3d7;
-}
-
-.division-management-actions > .division-button:last-child {
-    color: #aec6d6;
-    background: transparent;
-    border-color: #3b5368;
 }
 
 .division-workspace {
@@ -844,10 +1043,12 @@ textarea.division-field {
 
 .division-tool-panel {
     display: grid;
-    gap: 0.9rem;
+    gap: 0.75rem;
     min-width: 0;
-    padding-top: 1rem;
-    border-top: 1px solid #3b5266;
+    padding: 0.8rem;
+    background: #0e1f2e;
+    border: 1px solid #3b596f;
+    border-radius: 0.6rem;
 }
 
 .division-tool-panel > h2,
@@ -987,6 +1188,89 @@ textarea.division-field {
     min-width: 0;
 }
 
+.division-appearance-editor {
+    gap: 0.85rem;
+}
+
+.division-appearance-editor .division-inline-heading {
+    align-items: center;
+    gap: 0.5rem;
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.division-appearance-editor .division-inline-heading .division-eyebrow {
+    display: none;
+}
+
+.division-tool-panel .division-appearance-editor .division-inline-heading h2 {
+    font-size: 0.95rem;
+}
+
+.division-appearance-editor .division-tool-close {
+    min-height: 2.25rem;
+    padding: 0.35rem 0.4rem;
+    font-size: 0.69rem;
+}
+
+.division-appearance-editor .division-background-hint {
+    color: #a1bdcf;
+    font-size: 0.7rem;
+    line-height: 1.5;
+}
+
+.division-appearance-editor .division-inline-fields {
+    gap: 0.75rem;
+}
+
+.division-appearance-editor .division-field-label {
+    gap: 0.35rem;
+    color: #bfd6e5;
+    font-size: 0.72rem;
+}
+
+.division-appearance-editor .division-field {
+    min-height: 2.35rem;
+    padding: 0.4rem 0.5rem;
+    background: #091925;
+    border-color: #3f6076;
+    font-size: 0.75rem;
+}
+
+.division-appearance-editor .division-colour-picker {
+    height: 2.6rem;
+    padding: 0.2rem;
+}
+
+.division-appearance-editor .division-editor-note {
+    margin: 0;
+    color: #9eb9cb;
+    font-size: 0.7rem;
+    line-height: 1.5;
+}
+
+.division-appearance-editor .division-inline-status {
+    font-size: 0.72rem;
+}
+
+.division-appearance-actions,
+.division-appearance-editor .division-inline-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+    padding-top: 0.8rem;
+    border-top-color: #344e63;
+}
+
+.division-appearance-actions .division-button,
+.division-appearance-editor .division-inline-actions .division-button {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.25rem;
+    padding: 0.4rem 0.45rem;
+    font-size: 0.71rem;
+}
+
 .division-add-panel {
     display: grid;
     gap: 1.1rem;
@@ -1031,6 +1315,24 @@ textarea.division-field {
     font-size: 0.76rem;
     font-weight: 400;
     line-height: 1.5;
+}
+
+.division-section-choice--present {
+    background: #112332;
+    border-color: #365064;
+}
+
+.division-section-choice--present strong {
+    color: #bcd6e6;
+}
+
+.division-section-choice--present span {
+    color: #98b5c8;
+}
+
+.division-section-choice:disabled {
+    opacity: 0.5;
+    cursor: default;
 }
 
 .division-editor-entry {
@@ -1195,6 +1497,17 @@ textarea.division-field {
 
     .division-inline-actions .division-button {
         flex: 1;
+    }
+}
+
+@media (pointer: coarse) {
+    .division-management-tools .division-field:not([type="color"]) {
+        font-size: 1rem;
+    }
+
+    .division-format-toolbar .division-format-toggle,
+    .division-format-panel .division-format-reset {
+        min-height: 2.75rem;
     }
 }
 
