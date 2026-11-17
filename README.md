@@ -37,6 +37,8 @@ wrangler.jsonc                Cloudflare Worker configuration
 
 Assessments and Divisions start empty. Administrators can now add assessments; the seven defined playstyle classes are retained. Class videos are not available yet.
 
+Each class opens a playstyle panel with offence, defence, and teamwork notes, followed by potential matchups and teammate pairings with explanations. Selecting a related class updates the same panel. These describe possible interactions; positioning, teamwork, and individual skill still affect the outcome.
+
 The Divisions page invites tournament hosts to work with the division. A host request form and review process are planned; no contact form is live yet. The site administrator can create event drafts and delegate management to signed-in Bonk accounts.
 
 Bonk.io account sign-in is available through **Account**. Assessments are stored in this site's D1 database and appear publicly when created. No player records or competitions are fabricated, and the existing Bonk Critic database is not connected or imported.

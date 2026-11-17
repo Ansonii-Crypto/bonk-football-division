@@ -64,6 +64,28 @@ function renderClassesPage() {
         }
     ];
 
+    const matchups = [
+        { strong: "Weaver", weak: "Bulwark", reason: "Close control and direction changes let Weaver work around the route Bulwark is holding." },
+        { strong: "Bulwark", weak: "Catalyst", reason: "Bulwark holds position through the first challenge and makes Catalyst commit." },
+        { strong: "Bulwark", weak: "Opportunist", reason: "Bulwark shields loose balls and closes the quickest route to goal." },
+        { strong: "Catalyst", weak: "Tactician", reason: "Catalyst starts the challenge early and forces Tactician to react before they can settle into position." },
+        { strong: "Tactician", weak: "Renegade", reason: "Tactician covers where an unexpected touch could send the ball." },
+        { strong: "Tactician", weak: "Opportunist", reason: "Tactician spots the open lane or likely rebound early and gets there first." },
+        { strong: "Opportunist", weak: "Dynamo", reason: "Opportunist times a run into the space Dynamo leaves when chasing the ball or rejoining the attack." },
+        { strong: "Dynamo", weak: "Catalyst", reason: "Dynamo recovers quickly after the first challenge and contests the second ball." },
+        { strong: "Dynamo", weak: "Renegade", reason: "Dynamo can get back into the play after an unexpected touch sends it the other way." },
+        { strong: "Renegade", weak: "Weaver", reason: "Renegade changes the timing of the challenge, making it harder for Weaver to draw a predictable commitment and slip around it." }
+    ];
+    const partnerships = [
+        { names: ["Weaver", "Tactician"], reason: "Weaver can keep the ball moving while Tactician gets into position for the next touch." },
+        { names: ["Bulwark", "Dynamo"], reason: "Bulwark holds space while Dynamo moves up to support or gets back after a lost ball." },
+        { names: ["Bulwark", "Catalyst"], reason: "Bulwark covers behind the first challenge, giving Catalyst room to start the move." },
+        { names: ["Catalyst", "Opportunist"], reason: "Catalyst draws the challenge; Opportunist looks for the loose ball or the gap it leaves." },
+        { names: ["Tactician", "Renegade"], reason: "Tactician can cover the space behind an unexpected touch, giving Renegade room to improvise." },
+        { names: ["Opportunist", "Renegade"], reason: "An unexpected touch from Renegade can leave a loose ball or open angle for Opportunist to use." }
+    ];
+    const classesByName = new Map(classes.map(playstyle => [playstyle.name, playstyle]));
+
     const section = document.createElement("section");
     section.className = "page-content classes-content";
     section.setAttribute("aria-labelledby", "class-guide-heading");
@@ -93,6 +115,10 @@ function renderClassesPage() {
     closeButton.autofocus = true;
     closeButton.textContent = "\u00d7";
 
+    const panelControls = document.createElement("div");
+    panelControls.className = "class-panel-controls";
+    panelControls.append(closeButton);
+
     const videoArea = document.createElement("div");
     videoArea.className = "class-video";
 
@@ -112,6 +138,7 @@ function renderClassesPage() {
 
     const panelTitle = document.createElement("h2");
     panelTitle.id = "class-panel-title";
+    panelTitle.tabIndex = -1;
 
     const panelDescription = document.createElement("p");
     panelDescription.id = "class-panel-description";
@@ -136,8 +163,40 @@ function renderClassesPage() {
     const teamwork = textSection("Playing together");
     teamwork.content.classList.add("class-panel-tip");
     columns.append(offence.content, defence.content);
-    panelContent.append(panelTitle, panelDescription, columns, teamwork.content);
-    panel.append(closeButton, videoArea, panelContent);
+
+    const relationships = document.createElement("section");
+    relationships.className = "class-relationships";
+    relationships.setAttribute("aria-labelledby", "class-relationships-heading");
+    const relationshipsHeading = document.createElement("h3");
+    relationshipsHeading.id = "class-relationships-heading";
+    relationshipsHeading.textContent = "Matchups & teammates";
+    const relationshipsNote = document.createElement("p");
+    relationshipsNote.className = "class-relationships-note";
+    relationshipsNote.textContent = "Potential matchups and pairings. Position, teammates and individual skill can change how they play out.";
+    const relationshipsGrid = document.createElement("div");
+    relationshipsGrid.className = "class-relationships-grid";
+
+    function relationshipGroup(label, type) {
+        const group = document.createElement("section");
+        group.className = `class-relationship-group class-relationship-group--${type}`;
+        group.dataset.relationship = type;
+        const title = document.createElement("h4");
+        title.id = `class-relationship-${type}`;
+        title.textContent = label;
+        group.setAttribute("aria-labelledby", title.id);
+        const list = document.createElement("ul");
+        list.className = "class-relationship-list";
+        group.append(title, list);
+        relationshipsGrid.append(group);
+        return list;
+    }
+
+    const strongAgainst = relationshipGroup("Strong against", "strong");
+    const weakAgainst = relationshipGroup("Weak against", "weak");
+    const worksWith = relationshipGroup("Works well with", "teammates");
+    relationships.append(relationshipsHeading, relationshipsNote, relationshipsGrid);
+    panelContent.append(panelTitle, panelDescription, columns, teamwork.content, relationships);
+    panel.append(panelControls, videoArea, panelContent);
 
     let activeTrigger = null;
     let panelOpen = false;
@@ -202,22 +261,50 @@ function renderClassesPage() {
         }
     });
 
+    function fillRelationships(list, entries) {
+        list.replaceChildren();
+        for (const { name, reason } of entries) {
+            const item = document.createElement("li");
+            const relatedClass = document.createElement("button");
+            relatedClass.type = "button";
+            relatedClass.className = "class-relationship-link";
+            relatedClass.textContent = name;
+            relatedClass.setAttribute("aria-label", `Read ${name} playstyle`);
+            relatedClass.addEventListener("click", () => openPanel(classesByName.get(name)));
+            const description = document.createElement("p");
+            description.textContent = reason;
+            item.append(relatedClass, description);
+            list.append(item);
+        }
+    }
+
     function openPanel(playstyle, trigger) {
         if (!panel.isConnected) {
             return;
         }
 
+        const switchingClass = panel.open;
         video.pause();
         panelTitle.textContent = playstyle.name;
         panelDescription.textContent = playstyle.description;
         offence.description.textContent = playstyle.attack;
         defence.description.textContent = playstyle.defence;
         teamwork.description.textContent = playstyle.tip;
+        fillRelationships(strongAgainst, matchups.filter(matchup => matchup.strong === playstyle.name)
+            .map(matchup => ({ name: matchup.weak, reason: matchup.reason })));
+        fillRelationships(weakAgainst, matchups.filter(matchup => matchup.weak === playstyle.name)
+            .map(matchup => ({ name: matchup.strong, reason: matchup.reason })));
+        fillRelationships(worksWith, partnerships.filter(partnership => partnership.names.includes(playstyle.name))
+            .map(partnership => ({ name: partnership.names.find(name => name !== playstyle.name), reason: partnership.reason })));
         video.setAttribute("aria-label", `${playstyle.name} playstyle video`);
-        activeTrigger = trigger;
-        panel.showModal();
-        panelOpen = true;
-        document.body.classList.add("class-panel-open");
+        if (!switchingClass) {
+            activeTrigger = trigger;
+            panel.showModal();
+            panelOpen = true;
+            document.body.classList.add("class-panel-open");
+        } else {
+            panelTitle.focus({ preventScroll: true });
+        }
         panel.scrollTop = 0;
     }
 
