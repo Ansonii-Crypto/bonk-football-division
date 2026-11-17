@@ -613,37 +613,6 @@ textarea.division-field {
     white-space: normal;
 }
 
-.division-mode-switch {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.4rem;
-}
-
-.division-mode-switch > .division-tool-group-label {
-    margin-bottom: 0.2rem;
-    text-align: center;
-}
-
-.division-mode-switch .division-button {
-    min-height: 2.25rem;
-    padding: 0.45rem 0.6rem;
-    color: #b8d0df;
-    background: #0e1e2d;
-    border-color: #3c5a70;
-    border-radius: 0.45rem;
-}
-
-.division-mode-switch .division-button[aria-pressed="true"] {
-    color: #d8f1ff;
-    background: #2a5067;
-    border-color: #6b9eb7;
-}
-
-.division-mode-switch .division-button:hover:not(:disabled) {
-    color: #e2f3fc;
-    background: #223e52;
-}
-
 .division-page-actions,
 .division-settings-actions {
     display: grid;
@@ -654,6 +623,11 @@ textarea.division-field {
 .division-page-actions {
     padding-top: 0.8rem;
     border-top: 1px solid #344d62;
+}
+
+.division-management-actions > .division-page-actions:first-child {
+    padding-top: 0;
+    border-top: 0;
 }
 
 .division-publication-actions {
@@ -1354,6 +1328,71 @@ textarea.division-field {
     cursor: default;
 }
 
+.division-archive-picker {
+    display: grid;
+    gap: 0.9rem;
+    min-width: 0;
+}
+
+.division-archive-picker > h3,
+.division-archive-picker > h2 {
+    margin: 0;
+    color: #e0f0fa;
+    font-size: 1.15rem;
+}
+
+.division-archive-picker > p {
+    margin: 0;
+    color: #a9c4d7;
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+
+.division-archive-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.8rem 1rem;
+    min-width: 0;
+    padding: 1rem;
+    color: #d5e9f5;
+    background: #102333;
+    border: 1px solid #405e75;
+    border-radius: 0.65rem;
+}
+
+.division-archive-card :is(h3, h4, strong, p) {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.division-archive-card :is(h3, h4, strong) {
+    color: #d9edf8;
+    font-size: 0.88rem;
+}
+
+.division-archive-card p {
+    margin-top: 0.25rem;
+    color: #a2bed0;
+    font-size: 0.76rem;
+    line-height: 1.55;
+}
+
+.division-archive-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.division-archive-actions .division-button,
+.division-archive-picker > .division-button {
+    min-height: 2.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.76rem;
+}
+
 .division-editor-entry {
     display: grid;
     gap: 0.8rem;
@@ -1530,6 +1569,11 @@ textarea.division-field {
 }
 
 @media (pointer: coarse) {
+    .division-archive-actions .division-button,
+    .division-archive-picker > .division-button {
+        min-height: 2.75rem;
+    }
+
     .division-management-tools .division-field:not([type="color"]) {
         font-size: 1rem;
     }
@@ -1543,6 +1587,16 @@ textarea.division-field {
 
     .division-inline-formatting .division-format-fields .division-field:not([type="color"]) {
         font-size: 1rem;
+    }
+}
+
+@media (max-width: 36rem) {
+    .division-archive-card {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .division-archive-actions {
+        justify-content: flex-start;
     }
 }
 

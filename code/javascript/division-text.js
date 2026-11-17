@@ -141,7 +141,7 @@
         for (const key of ["name", "summary", "description"]) add(`general.${key}`, content[key]);
         add("participation.description", content.participation?.description);
         for (const [collection, prefix, keys] of [["timeline", "timeline", ["title", "description"]],
-            ["campaigns", "campaigns", ["title", "description"]], ["referendums", "referendums", ["title", "description"]],
+            ["campaigns", "campaigns", ["title", "description"]], ["referendums", "referendums", ["title", "description"]], ["polls", "polls", ["title", "description"]],
             ["customSections", "custom", ["title", "description"]], ["teams", "teams", ["name"]]]) {
             for (const item of Array.isArray(content[collection]) ? content[collection] : []) {
                 if (!item || typeof item.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(item.id)) continue;

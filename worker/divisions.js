@@ -1,8 +1,8 @@
-const SECTIONS = ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums", "custom"];
-const OPTIONAL_SECTIONS = ["participation", "timeline", "teams", "bracket", "campaigns", "referendums"];
+const SECTIONS = ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums", "polls", "custom"];
+const OPTIONAL_SECTIONS = ["participation", "timeline", "teams", "bracket", "campaigns", "referendums", "polls"];
 const GENERAL_FIELDS = ["name", "summary", "description", "status", "startDate", "endDate"];
 const ROLES = ["director", "organizer", "editor"];
-const CONTENT_FIELDS = [...GENERAL_FIELDS, "appearance", "textStyles", "sectionOrder", "customSections", "participation", "timeline", "campaigns", "referendums", "teams", "results"];
+const CONTENT_FIELDS = [...GENERAL_FIELDS, "appearance", "textStyles", "sectionOrder", "customSections", "archivedSections", "participation", "timeline", "campaigns", "referendums", "polls", "teams", "results"];
 
 function object(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -33,6 +33,19 @@ function appearance(content) {
 
 function customSections(content) {
     return Array.isArray(content.customSections) ? content.customSections : [];
+}
+
+function polls(content) {
+    return Array.isArray(content.polls) ? content.polls : [];
+}
+
+function archivedSections(content) {
+    return Array.isArray(content.archivedSections) ? content.archivedSections : [];
+}
+
+function restrictedArchives(content) {
+    return archivedSections(content).filter(section => !["campaigns", "referendums", "polls", "custom"].includes(section.type))
+        .sort((first, second) => first.id.localeCompare(second.id));
 }
 
 function sectionOrder(content) {
@@ -75,10 +88,10 @@ function validAppearance(value) {
 function styledText(content, path) {
     if (["general.name", "general.summary", "general.description"].includes(path)) return content[path.slice(8)];
     if (path === "participation.description") return content.participation.description;
-    const match = /^(timeline|campaigns|referendums|custom|teams)\.([A-Za-z0-9_-]{1,64})\.(title|description|name)$/.exec(path);
+    const match = /^(timeline|campaigns|referendums|polls|custom|teams)\.([A-Za-z0-9_-]{1,64})\.(title|description|name)$/.exec(path);
     if (!match || match[1] === "teams" && match[3] !== "name" || match[1] !== "teams" && match[3] === "name") return null;
     const collection = match[1] === "custom" ? customSections(content) : content[match[1]];
-    return collection.find(item => item.id === match[2])?.[match[3]] ?? null;
+    return (Array.isArray(collection) ? collection : []).find(item => item.id === match[2])?.[match[3]] ?? null;
 }
 
 function validTextStyles(content) {
@@ -110,7 +123,7 @@ function validTextStyles(content) {
 }
 
 function editorTextStyle(path) {
-    return path === "general.description" || /^(campaigns|referendums|custom)\./.test(path);
+    return path === "general.description" || /^(campaigns|referendums|polls|custom)\./.test(path);
 }
 
 function restrictedTextStyles(content) {
@@ -134,6 +147,8 @@ function date(value) {
 }
 
 export function divisionRequestMethods(path) {
+    if (/^\/api\/divisions\/[1-9][0-9]*\/polls$/.test(path)) return "GET";
+    if (/^\/api\/divisions\/[1-9][0-9]*\/polls\/[A-Za-z0-9_-]{1,64}\/vote$/.test(path)) return "POST";
     if (path === "/api/divisions" || /^\/api\/divisions\/[1-9][0-9]*$/.test(path)
         || path === "/api/manage/divisions") {
         return "GET";
@@ -162,12 +177,13 @@ function defaultContent(name, summary) {
         appearance: { backgroundColor: "", backgroundImage: "" },
         sectionOrder: [],
         customSections: [],
+        archivedSections: [],
         participation: { mode: "solo", teamSize: 1, registration: "closed", description: "" },
-        timeline: [], campaigns: [], referendums: [], teams: [], results: {}
+        timeline: [], campaigns: [], referendums: [], polls: [], teams: [], results: {}
     };
 }
 
-function validateContent(content, positiveBonkId) {
+function validateContent(content, positiveBonkId, validateArchives = true) {
     if (!object(content) || Object.keys(content).some(key => !CONTENT_FIELDS.includes(key))) {
         return "Send the division's content in the supported format.";
     }
@@ -237,6 +253,21 @@ function validateContent(content, positiveBonkId) {
         || item.options.length < 2 || item.options.length > 8 || item.options.some(option => !text(option, 120, true)))) {
         return "Each referendum needs a question, a listed status, and two to eight options.";
     }
+    if (content.polls !== undefined && (!Array.isArray(content.polls) || content.polls.length > 20)) {
+        return "Use at most 20 polls.";
+    }
+    const pollIds = new Set();
+    for (const poll of polls(content)) {
+        if (!object(poll) || !identifier(poll.id) || pollIds.has(poll.id)
+            || Object.keys(poll).some(key => !["id", "title", "description", "options", "status"].includes(key))
+            || !text(poll.title, 200, true) || !text(poll.description, 2000)
+            || !["planned", "open", "closed"].includes(poll.status) || !Array.isArray(poll.options)
+            || poll.options.length < 2 || poll.options.length > 8 || poll.options.some(option => !text(option, 120, true))
+            || new Set(poll.options.map(option => option.trim().toLowerCase())).size !== poll.options.length) {
+            return "Each poll needs a unique ID, a question up to 200 characters, a listed status, and two to eight distinct choices.";
+        }
+        pollIds.add(poll.id);
+    }
     const teamIds = new Set(content.teams.map(team => team.id));
     const rosterNames = new Set();
     const rosterIds = new Set();
@@ -278,12 +309,46 @@ function validateContent(content, positiveBonkId) {
     if (!validTextStyles(content)) {
         return "Use supported text formatting with valid field names and non-overlapping ranges within the field's text.";
     }
+    if (validateArchives) {
+        if (content.archivedSections !== undefined && (!Array.isArray(content.archivedSections) || content.archivedSections.length > 30)) {
+            return "Keep at most 30 archived sections. Remove older archives before saving more.";
+        }
+        const keysByType = { participation: ["participation"], timeline: ["timeline"], teams: ["teams", "results"],
+            bracket: ["teams", "results"], campaigns: ["campaigns"], referendums: ["referendums"], polls: ["polls"], custom: ["customSections"] };
+        const archiveIds = new Set();
+        for (const archive of archivedSections(content)) {
+            if (!object(archive) || !identifier(archive.id) || archiveIds.has(archive.id)
+                || Object.keys(archive).some(key => !["id", "type", "title", "archivedAt", "content", "textStyles"].includes(key))
+                || !Object.hasOwn(keysByType, archive.type) || !text(archive.title, 120)
+                || !Number.isSafeInteger(archive.archivedAt) || archive.archivedAt < 0 || !object(archive.content)) {
+                return "Each archived section needs a unique ID, a supported template, a title and an archive time.";
+            }
+            archiveIds.add(archive.id);
+            const keys = keysByType[archive.type];
+            if (Object.keys(archive.content).length !== keys.length || keys.some(key => !Object.hasOwn(archive.content, key))
+                || archive.type === "custom" && (!Array.isArray(archive.content.customSections) || archive.content.customSections.length !== 1)) {
+                return "Archived sections must contain only the content for their own template.";
+            }
+            if (archive.textStyles !== undefined && (!object(archive.textStyles) || Object.keys(archive.textStyles).some(path => {
+                if (archive.type === "participation") return path !== "participation.description";
+                const prefix = archive.type === "custom" ? "custom" : ["teams", "bracket"].includes(archive.type) ? "teams" : archive.type;
+                return !path.startsWith(`${prefix}.`);
+            }))) {
+                return "Archived formatting must belong to that section's own text fields.";
+            }
+            const sample = { ...defaultContent("Archived section", ""),
+                participation: { mode: "teams", teamSize: 4, registration: "closed", description: "" },
+                ...archive.content, ...(archive.textStyles === undefined ? {} : { textStyles: archive.textStyles }) };
+            const error = validateContent(sample, positiveBonkId, false);
+            if (error) return `Archived section: ${error}`;
+        }
+    }
     return null;
 }
 
 function permissions(role) {
     return {
-        editSections: role === "editor" ? ["general", "appearance", "campaigns", "referendums", "custom"] : [...SECTIONS],
+        editSections: role === "editor" ? ["general", "appearance", "campaigns", "referendums", "polls", "custom"] : [...SECTIONS],
         generalFields: role === "editor" ? ["description"] : [...GENERAL_FIELDS],
         publish: ["site-admin", "director"].includes(role),
         manageMembers: ["site-admin", "director"].includes(role),
@@ -295,6 +360,8 @@ function managedDivision(row, role) {
     const content = JSON.parse(row.draft_json);
     content.appearance = appearance(content);
     content.customSections = customSections(content);
+    content.polls = polls(content);
+    content.archivedSections = archivedSections(content);
     content.sectionOrder = sectionOrder(content);
     return {
         id: row.id, content, version: row.version,
@@ -305,8 +372,10 @@ function managedDivision(row, role) {
 
 function publicContent(serialized) {
     const content = JSON.parse(serialized);
+    delete content.archivedSections;
     content.appearance = appearance(content);
     content.customSections = customSections(content);
+    content.polls = polls(content);
     content.sectionOrder = sectionOrder(content);
     content.teams = content.teams.map(team => ({
         ...team,
@@ -406,6 +475,64 @@ async function members(env, id) {
     return { members: rows.results.map(row => ({ bonkId: row.bonk_id, username: row.username, role: row.role })) };
 }
 
+async function pollRevision(poll) {
+    const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([poll.title, poll.options])));
+    return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function pollResults(env, row, account) {
+    const content = JSON.parse(row.published_json);
+    const visible = sectionOrder(content).includes("polls") ? polls(content) : [];
+    const results = await Promise.all(visible.map(async poll => ({
+        id: poll.id, title: poll.title, options: [...poll.options], status: poll.status, revision: await pollRevision(poll),
+        counts: poll.options.map(() => 0), total: 0, selectedOption: null, canVote: Boolean(account && poll.status === "open")
+    })));
+    if (results.length) {
+        const rows = await env.DB.prepare(`SELECT poll_id, revision, option_index, COUNT(*) AS votes,
+            MAX(CASE WHEN bonk_id = ? THEN 1 ELSE 0 END) AS own_vote
+            FROM division_poll_votes WHERE division_id = ? AND (${results.map(() => "(poll_id = ? AND revision = ?)").join(" OR ")})
+            GROUP BY poll_id, revision, option_index`)
+            .bind(account?.bonkId || "", row.id, ...results.flatMap(poll => [poll.id, poll.revision])).all();
+        for (const count of rows.results) {
+            const poll = results.find(poll => poll.id === count.poll_id && poll.revision === count.revision);
+            if (!poll || !Number.isInteger(count.option_index) || count.option_index < 0 || count.option_index >= poll.counts.length) continue;
+            poll.counts[count.option_index] = Number(count.votes);
+            poll.total += Number(count.votes);
+            if (count.own_vote) poll.selectedOption = count.option_index;
+        }
+    }
+    return { polls: results, signedIn: Boolean(account) };
+}
+
+async function handlePollRequest(request, env, id, pollId, account, readJson, json) {
+    if (request.method === "POST" && !account) return json({ error: "Sign in with your Bonk account to vote." }, 401);
+    const row = await env.DB.prepare("SELECT id, published_json FROM divisions WHERE id = ? AND published_json IS NOT NULL").bind(id).first();
+    if (!row) return json({ error: "Division not found." }, 404);
+    if (request.method === "GET") return json(await pollResults(env, row, account));
+    const content = JSON.parse(row.published_json);
+    const poll = sectionOrder(content).includes("polls") ? polls(content).find(item => item.id === pollId) : null;
+    if (!poll) return json({ error: "That poll is not publicly available." }, 404);
+    if (poll.status !== "open") return json({ error: "That poll is not open for voting." }, 409);
+    const body = await readJson(request);
+    if (!body || Object.keys(body).some(key => !["option", "revision"].includes(key))
+        || !Number.isInteger(body.option) || body.option < 0 || body.option >= poll.options.length
+        || typeof body.revision !== "string" || !/^[a-f0-9]{64}$/.test(body.revision)) {
+        return json({ error: "Choose one of the current poll options." }, 400);
+    }
+    const revision = await pollRevision(poll);
+    if (body.revision !== revision) return json({ error: "This poll changed. Refresh it before voting." }, 409);
+    // The publication check and write share one SQLite statement so a concurrent
+    // close, removal or publication cannot authorise a vote against a stale poll.
+    const saved = await env.DB.prepare(`INSERT INTO division_poll_votes (division_id, poll_id, revision, bonk_id, option_index, updated_at)
+        SELECT ?, ?, ?, ?, ?, ? FROM divisions WHERE id = ? AND published_json = ?
+        ON CONFLICT(division_id, poll_id, revision, bonk_id) DO UPDATE SET
+            option_index = excluded.option_index, updated_at = excluded.updated_at
+        RETURNING option_index`)
+        .bind(id, poll.id, revision, account.bonkId, body.option, Date.now(), id, row.published_json).first();
+    if (!saved) return json({ error: "This division changed. Refresh the poll before voting." }, 409);
+    return json(await pollResults(env, row, account));
+}
+
 export async function handleDivisionRequest(request, env, url, account, readJson, json, positiveBonkId) {
     const path = url.pathname;
     if (path === "/api/divisions" || path === "/api/manage/divisions") {
@@ -435,6 +562,7 @@ export async function handleDivisionRequest(request, env, url, account, readJson
         return json({ error: "Division not found." }, 404);
     }
     if (isPublic) {
+        if (parts[4] === "polls") return handlePollRequest(request, env, id, parts[5], account, readJson, json);
         const row = await env.DB.prepare("SELECT * FROM divisions WHERE id = ? AND published_json IS NOT NULL").bind(id).first();
         return row ? json({ division: { id: row.id, content: publicContent(row.published_json),
             publishedAt: row.published_at, updatedAt: row.published_at } }) : json({ error: "Division not found." }, 404);
@@ -519,17 +647,20 @@ export async function handleDivisionRequest(request, env, url, account, readJson
     }
     if (role === "editor") {
         const previous = JSON.parse(row.draft_json);
-        const editorSections = new Set(["campaigns", "referendums"]);
+        const editorSections = new Set(["campaigns", "referendums", "polls"]);
         const restrictedOrder = content => sectionOrder(content).filter(key => !editorSections.has(key) && !key.startsWith("custom:"));
         if (JSON.stringify(restrictedOrder(previous)) !== JSON.stringify(restrictedOrder(body.content))) {
-            return json({ error: "Editors can change only campaign, referendum and custom sections in the page layout." }, 403);
+            return json({ error: "Editors can change only campaign, referendum, poll and custom sections in the page layout." }, 403);
         }
         if (JSON.stringify(restrictedTextStyles(previous)) !== JSON.stringify(restrictedTextStyles(body.content))) {
-            return json({ error: "Editors can format the description, campaigns, referendums and custom sections only." }, 403);
+            return json({ error: "Editors can format the description, campaigns, referendums, polls and custom sections only." }, 403);
         }
-        const allowed = new Set(["description", "appearance", "textStyles", "sectionOrder", "customSections", "campaigns", "referendums"]);
+        if (JSON.stringify(restrictedArchives(previous)) !== JSON.stringify(restrictedArchives(body.content))) {
+            return json({ error: "Editors can manage archived campaigns, referendums, polls and text sections only." }, 403);
+        }
+        const allowed = new Set(["description", "appearance", "textStyles", "sectionOrder", "customSections", "archivedSections", "campaigns", "referendums", "polls"]);
         if (CONTENT_FIELDS.some(key => !allowed.has(key) && JSON.stringify(previous[key]) !== JSON.stringify(body.content[key]))) {
-            return json({ error: "Editors can update appearance, the description, campaigns, referendums and custom sections only." }, 403);
+            return json({ error: "Editors can update appearance, the description, campaigns, referendums, polls and custom sections only." }, 403);
         }
     }
     const updated = await env.DB.prepare(`UPDATE divisions SET draft_json = ?, version = version + 1,

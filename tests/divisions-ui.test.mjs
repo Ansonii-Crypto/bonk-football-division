@@ -11,10 +11,10 @@ const account = { bonkId: "3177088", username: "EventAdmin", isAdmin: true, avat
 const content = () => ({
     name: "Football cup", summary: "A community event", description: "Original description", status: "upcoming",
     startDate: "", endDate: "", participation: { mode: "teams", teamSize: 4, registration: "closed", description: "" },
-    timeline: [], campaigns: [], referendums: [], teams: [], results: {}
+    timeline: [], campaigns: [], referendums: [], polls: [], teams: [], results: {}
 });
 const permissions = {
-    editSections: ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums", "custom"],
+    editSections: ["general", "appearance", "participation", "timeline", "teams", "bracket", "campaigns", "referendums", "polls", "custom"],
     generalFields: ["name", "summary", "description", "status", "startDate", "endDate"],
     publish: true, manageMembers: true, assignRoles: ["director", "organizer", "editor"]
 };
@@ -108,7 +108,6 @@ test("an administrator creates a private division, saves inline sections and pub
     assert.equal(window.document.querySelector("#app > .page-introduction"), null);
     assert.ok(window.document.querySelector(".division-management-tools"));
     assert.equal(window.document.querySelector(".division-inspector"), null);
-    button(window, "Edit").click();
     const editor = editSection(window);
     assert.equal(editor.closest("[data-section]").dataset.section, "general", "fields sit inside the section being edited");
     input(window, field(window, "About this event"), "The new event description");
@@ -145,9 +144,26 @@ test("a public division opens its published event content without management con
     assert.equal(window.document.querySelector(".division-event-title").textContent, "Football cup");
     assert.equal(window.document.querySelector(".division-management-bar"), null);
     assert.equal(window.document.querySelector(".division-inline-editor"), null);
+    assert.equal(window.document.querySelector(".division-section-edit, .division-section-insert, .division-add-section"), null);
     assert.ok(window.document.querySelector("#site-header .navigation"));
     assert.equal(window.document.querySelector("#app").dataset.page, "divisions");
     assert.equal(window.document.querySelector(".division-page-background").style.backgroundColor, "rgb(56, 76, 104)");
+});
+
+test("signing in alone does not reveal division editing or insertion controls", async t => {
+    const published = { ...content(), sectionOrder: ["timeline"], timeline: [{ id: "opening", title: "Opening matches", date: "", description: "Published details." }] };
+    const viewer = { bonkId: "1001", username: "DivisionReader", isAdmin: false, avatarCode: null };
+    const calls = [];
+    const window = await page(t, async path => {
+        calls.push(path);
+        if (path === "/api/manage/divisions/2") return Response.json({ error: "Division access is required." }, { status: 403 });
+        assert.equal(path, "/api/divisions/2");
+        return Response.json({ division: { id: 2, content: published, publishedAt: 1 } });
+    }, "#divisions/2", viewer);
+    assert.ok(calls.includes("/api/manage/divisions/2"));
+    assert.ok(calls.includes("/api/divisions/2"));
+    assert.ok(window.document.querySelector('[data-section="timeline"]'));
+    assert.equal(window.document.querySelector(".division-management-tools, .division-section-edit, .division-section-insert, .division-add-section"), null);
 });
 
 test("switching sections keeps local edits and cancelling restores only the current section", async t => {
@@ -158,7 +174,6 @@ test("switching sections keeps local edits and cancelling restores only the curr
         if (options.method === "PUT") writes += 1;
         return Response.json({ division: model });
     }, "#divisions/1");
-    button(window, "Edit").click();
     editSection(window);
     const description = field(window, "About this event");
     description.closest("label").dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
@@ -189,7 +204,6 @@ test("an inline save disables fields until the server confirms the saved section
         }
         return Response.json({ division: model });
     }, "#divisions/1");
-    button(window, "Edit").click();
     editSection(window);
     const description = field(window, "About this event");
     input(window, description, "Saved section text");
@@ -215,7 +229,6 @@ test("a conflicting section save keeps the fields open and preserves the local t
             ? Response.json({ error: "This division changed elsewhere. Reload it before saving." }, { status: 409 })
             : Response.json({ division: model });
     }, "#divisions/1");
-    button(window, "Edit").click();
     editSection(window);
     input(window, field(window, "About this event"), "Keep this local version");
     window.document.querySelector(".division-inline-save").click();
@@ -225,7 +238,7 @@ test("a conflicting section save keeps the fields open and preserves the local t
     assert.equal(field(window, "About this event").matches(":disabled"), false);
 });
 
-test("sections can be added, moved and removed without losing their content", async t => {
+test("sections can be moved and archived, then explicitly restored with their saved content", async t => {
     let saved;
     const initial = { ...content(), sectionOrder: ["timeline", "campaigns"],
         timeline: [{ id: "opening", title: "Opening matches", date: "2026-11-21", description: "The event starts." }],
@@ -241,7 +254,6 @@ test("sections can be added, moved and removed without losing their content", as
     }, "#divisions/1");
     const { document } = window;
     const order = () => [...document.querySelectorAll(".division-live-preview .division-view > [data-section]")].map(node => node.dataset.section);
-    button(window, "Edit").click();
     assert.equal(document.querySelector(".division-inspector"), null);
     assert.deepEqual(order(), ["general", "timeline", "campaigns"]);
     document.querySelector('[data-section="campaigns"] .division-section-move-up').click();
@@ -251,6 +263,9 @@ test("sections can be added, moved and removed without losing their content", as
     document.querySelector(".division-add-section")?.click();
     assert.ok(document.querySelector(".division-add-panel"));
     document.querySelector('[data-add-section="timeline"]').click();
+    assert.ok(document.querySelector(".division-archive-picker"));
+    assert.equal(document.querySelector('[data-section="timeline"]'), null, "an archived section is not silently recreated");
+    document.querySelector('[data-restore-archive]').click();
     assert.deepEqual(order(), ["general", "campaigns", "timeline"]);
     assert.ok(document.querySelector('[data-section="timeline"] .division-inline-editor'));
     window.document.querySelector(".division-inline-save").click();
@@ -276,7 +291,6 @@ test("cancelling a newly added text section removes it, while saved text section
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click();
     document.querySelector(".division-add-section").click();
     document.querySelector('[data-add-section="custom"]').click();
     document.querySelector(".division-inline-cancel").click();
@@ -310,7 +324,6 @@ test("a section can be inserted between existing sections and cancelled without 
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click();
     const insert = () => document.querySelector('.division-section-insert[data-after-section="timeline"]');
     insert().click();
     assert.equal(document.querySelector(".division-add-panel").dataset.afterSection, "timeline");
@@ -333,7 +346,6 @@ test("banner previews update and reset independently without replacing the activ
     const model = modelFor({ ...content(), appearance: { backgroundColor: "#384c68", backgroundImage: "" } });
     const window = await page(t, async () => Response.json({ division: model }), "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click();
     document.querySelector(".division-banner-edit").click();
     const colour = field(window, "Banner colour");
     input(window, colour, "#407159");
@@ -369,7 +381,6 @@ test("an open section chooser cannot mutate the draft while a global save is pen
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click();
     document.querySelector('[data-section="campaigns"] .division-section-move-up').click();
     document.querySelector(".division-add-section").click();
     button(window, "Save draft").click();
@@ -404,7 +415,6 @@ test("background controls can close in several ways without losing local changes
     const { document } = window;
     const backdrop = () => document.querySelector(".division-page-background");
     const closed = () => assert.equal(document.querySelector(".division-inline-editor"), null);
-    button(window, "Edit").click();
     button(window, "Background").click();
     input(window, field(window, "Background colour"), "#407159");
     button(window, "Background").click();
@@ -446,7 +456,6 @@ test("editing another section closes background controls and preserves its unsav
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click();
     button(window, "Background").click();
     input(window, field(window, "Background colour"), "#407159");
     const editor = editSection(window, "general");
@@ -471,7 +480,6 @@ test("closed background changes can be undone and redone in the preview without 
         return Response.json({ division: model });
     }, "#divisions/1");
     const backdrop = () => window.document.querySelector(".division-page-background");
-    button(window, "Edit").click();
     button(window, "Background").click();
     input(window, field(window, "Background colour"), "#407159");
     input(window, field(window, "Background image URL"), "https://example.com/revised.jpg");
@@ -498,7 +506,6 @@ test("restoring the saved background values leaves no unsaved change after closi
         if (options.method === "PUT") writes += 1;
         return Response.json({ division: model });
     }, "#divisions/1");
-    button(window, "Edit").click();
     button(window, "Background").click();
     input(window, field(window, "Background colour"), "#407159");
     input(window, field(window, "Background image URL"), "https://example.com/revised.jpg");
@@ -525,7 +532,6 @@ test("a failed background save keeps its fields and lets management switch to an
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click();
     button(window, "Background").click();
     input(window, field(window, "Background colour"), "#407159");
     document.querySelector(".division-inline-save").click();
@@ -555,7 +561,6 @@ test("undo and redo preserve layout history after the reordered draft has been s
     }, "#divisions/1");
     const { document } = window;
     const order = () => [...document.querySelectorAll(".division-live-preview .division-view > [data-section]")].map(node => node.dataset.section);
-    button(window, "Edit").click();
     assert.equal(button(window, "Undo").disabled, true);
     assert.equal(button(window, "Redo").disabled, true);
     document.querySelector('[data-section="campaigns"] .division-section-move-up').click();
@@ -593,7 +598,6 @@ test("a saved section can be undone and saved again without publishing the rever
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click();
     editSection(window);
     input(window, field(window, "About this event"), "A saved description");
     document.querySelector(".division-inline-save").click();
@@ -614,7 +618,7 @@ test("a saved section can be undone and saved again without publishing the rever
     assert.equal(model.publishedAt, null);
 });
 
-test("division management stays in a left dock in both View and Edit modes", async t => {
+test("permitted managers get section actions and insertion controls without a mode switch", async t => {
     const model = { ...modelFor(), role: "editor", permissions: { ...permissions, publish: false, manageMembers: false, editSections: ["general", "appearance", "campaigns", "custom"] } };
     const window = await page(t, async path => {
         assert.equal(path, "/api/manage/divisions/1");
@@ -628,14 +632,17 @@ test("division management stays in a left dock in both View and Edit modes", asy
         assert.ok(slot, "the tools occupy their own left slot beside the event");
         assert.ok(slot.querySelector(".division-management-dock > .division-management-tools"));
         assert.equal(container.querySelectorAll(".division-management-tools").length, 1);
-        assert.equal(document.querySelector(".division-management-tools--view"), null, "View does not move tools above the event");
+        assert.equal(document.querySelector(".division-mode-switch"), null, "the dock has no View or Edit mode controls");
         assert.ok(container.querySelector(":scope > .division-workspace"));
         assert.equal(slot.querySelector(".division-workspace"), null, "event content stays separate from the tools");
     };
     docked();
-    button(window, "Edit").click();
+    assert.ok(document.querySelector('[data-section="general"] .division-section-edit'), "the permitted section offers Edit immediately");
+    assert.ok(document.querySelector(".division-section-insert"), "managers can insert between sections immediately");
+    assert.ok(document.querySelector(".division-add-section"), "managers can add at the end immediately");
+    editSection(window);
     docked();
-    button(window, "View").click();
+    document.querySelector(".division-inline-cancel").click();
     docked();
 });
 
@@ -655,8 +662,7 @@ test("opening and closing the management dock keeps unfinished edits without wri
     toggle().click();
     assert.equal(toggle().getAttribute("aria-expanded"), "true");
     assert.equal(slot().classList.contains("is-open"), true);
-    button(window, "Edit").click();
-    assert.equal(toggle().getAttribute("aria-expanded"), "true", "mode changes preserve the dock's open state");
+    assert.equal(toggle().getAttribute("aria-expanded"), "true", "opening tools preserves the dock's open state");
     const editor = editSection(window);
     const description = field(window, "About this event");
     input(window, description, "Work in progress that must survive closing the tools");
@@ -722,15 +728,14 @@ test("the section rail navigates visible sections outside the management tools w
     assert.ok(rail.closest(".division-workspace"));
     assert.equal(rail.closest(".division-management-tools"), null);
     assert.equal(document.querySelector("select.division-outline"), null);
-    assert.equal(rail.querySelector('[data-section-target="campaigns"]'), null, "View mode omits empty sections with no visible scroll target");
+    assert.ok(rail.querySelector('[data-section-target="campaigns"]'), "managers can navigate empty sections that are ready to edit");
     assert.match(rail.querySelector('[data-section-target="custom:rules"]').getAttribute("aria-label"), /Match rules/);
     rail.querySelector('[data-section-target="timeline"]').click();
     rail.querySelector('[data-section-target="custom:rules"]').click();
     assert.deepEqual(scrolled, [{ key: "timeline", block: "start" }, { key: "custom:rules", block: "start" }]);
     assert.equal(window.location.hash, "#divisions/1");
     assert.equal(requests, 1);
-    button(window, "Edit").click();
-    assert.ok(document.querySelector('.division-section-dot[data-section-target="campaigns"]'), "Edit mode includes the visible empty section");
+    assert.ok(document.querySelector('.division-section-dot[data-section-target="campaigns"]'), "the empty section remains available without switching modes");
     document.querySelector('[data-section="custom:rules"] .division-section-move-up').click();
     assert.deepEqual([...document.querySelectorAll(".division-section-dot")].map(dot => dot.dataset.sectionTarget), ["general", "timeline", "custom:rules", "campaigns"]);
     document.querySelector('[data-section="campaigns"] .division-section-remove').click();
@@ -880,7 +885,6 @@ test("section navigation keeps unfinished content edits and parks background cha
     const { document } = window;
     const scrolled = [];
     window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this.dataset.section); };
-    button(window, "Edit").click();
     const editor = editSection(window);
     input(window, field(window, "About this event"), "Unfinished section text");
     const timeline = document.querySelector('.division-section-dot[data-section-target="timeline"]');
@@ -931,7 +935,6 @@ test("the section picker offers built-in sections even when they already appear 
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click();
     document.querySelector(".division-add-section").click();
     for (const type of ["participation", "timeline", "teams", "bracket", "campaigns", "referendums"]) {
         assert.match(document.querySelector(`[data-add-section="${type}"]`).textContent, /Already on this page/);
@@ -959,7 +962,7 @@ test("selected text formatting stays live, survives section switching and saves 
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click(); editSection(window);
+    editSection(window);
     const description = field(window, "About this event");
     description.setSelectionRange(0, 8);
     description.dispatchEvent(new window.Event("select", { bubbles: true }));
@@ -982,7 +985,7 @@ test("selected text formatting stays live, survives section switching and saves 
     assert.equal(button(window, "Save draft").disabled, false);
     assert.equal(button(window, "Undo").disabled, false);
     assert.equal(button(window, "Background").disabled, false);
-    assert.equal(button(window, "View").disabled, false);
+    assert.equal(document.querySelector(".division-mode-switch"), null);
     editSection(window, "participation");
     input(window, field(window, "Participation details"), "Changes to cancel");
     document.querySelector(".division-inline-cancel").click();
@@ -1004,7 +1007,7 @@ test("typing rebases text styles and Cancel restores formatting together with th
         return Response.json({ division: model });
     }, "#divisions/1");
     const { document } = window;
-    button(window, "Edit").click(); editSection(window);
+    editSection(window);
     input(window, field(window, "About this event"), "New Original description");
     document.querySelector(".division-inline-save").click(); await tick();
     assert.deepEqual(model.content.textStyles["general.description"], [{ start: 4, end: 12, bold: true }]);
@@ -1021,8 +1024,7 @@ test("formatting tools stay with the active section and appear when new text fie
     const model = modelFor({ ...content(), sectionOrder: ["teams", "bracket"] });
     const window = await page(t, async () => Response.json({ division: model }), "#divisions/1");
     const { document } = window;
-    assert.equal(document.querySelector(".division-format-panel"), null, "View mode has no formatting controls");
-    button(window, "Edit").click();
+    assert.equal(document.querySelector(".division-format-panel"), null, "the section preview has no formatting controls until its editor opens");
     editSection(window);
     assert.equal(document.querySelectorAll(".division-inline-editor .division-inline-formatting").length, 1);
     assert.equal(document.querySelector(".division-management-tools .division-format-panel"), null);
@@ -1046,9 +1048,225 @@ test("formatting tools stay with the active section and appear when new text fie
     assert.equal(document.querySelectorAll(".division-format-panel").length, 1);
     assert.equal(document.querySelector(".division-inline-formatting").hidden, true, "score controls do not show text styling");
     assert.equal(toolbar.isConnected, false, "switching sections removes the old toolbar");
-    button(window, "View").click();
+    document.querySelector(".division-inline-cancel").click();
     assert.equal(document.querySelector(".division-format-panel"), null);
     for (const label of ["Save draft", "Background", "Banner", "Management roles", "Undo", "Redo"]) {
         assert.ok(button(window, label).closest(".division-management-tools"), `${label} remains in the global tools`);
     }
+});
+
+test("fresh templates stay separate from saved archives and managers can restore or delete archived sections", async t => {
+    let model = modelFor({ ...content(), sectionOrder: ["timeline"],
+        timeline: [{ id: "original", title: "Original fixtures", date: "2026-11-21", description: "The first saved timeline." }],
+        textStyles: { "timeline.original.title": [{ start: 0, end: 8, bold: true }] } });
+    const writes = [];
+    const window = await page(t, async (path, options) => {
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            const body = JSON.parse(options.body);
+            writes.push(body.content);
+            model = { ...model, content: body.content, version: body.version + 1 };
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    document.querySelector('[data-section="timeline"] .division-section-remove').click();
+    assert.equal(document.querySelector('[data-section="timeline"]'), null);
+    button(window, "Save draft").click(); await tick();
+    assert.equal(model.content.timeline.length, 0);
+    assert.equal(model.content.archivedSections.length, 1);
+    assert.equal(model.content.archivedSections[0].content.timeline[0].title, "Original fixtures");
+    assert.deepEqual(model.content.archivedSections[0].textStyles["timeline.original.title"], [{ start: 0, end: 8, bold: true }]);
+    button(window, "Reload saved draft").click(); await tick();
+    document.querySelector(".division-add-section").click();
+    document.querySelector('[data-add-section="timeline"]').click();
+    assert.ok(document.querySelector(".division-archive-picker"));
+    assert.equal(document.querySelector(".division-inline-editor"), null);
+    document.querySelector('[data-create-new-section="timeline"]').click();
+    assert.equal(document.querySelector('.division-inline-fields input'), null, "the new timeline has no resurrected stages");
+    button(window, "Add timeline stage").click();
+    input(window, field(window, "Title"), "Fresh fixtures");
+    input(window, field(window, "Description"), "A separate replacement timeline.");
+    document.querySelector(".division-inline-save").click(); await tick();
+    assert.equal(model.content.timeline[0].title, "Fresh fixtures");
+    assert.equal(model.content.archivedSections[0].content.timeline[0].title, "Original fixtures");
+    assert.equal(model.content.textStyles?.["timeline.original.title"], undefined);
+    document.querySelector('[data-section="timeline"] .division-section-remove').click();
+    button(window, "Save draft").click(); await tick();
+    assert.equal(model.content.archivedSections.length, 2);
+    document.querySelector(".division-add-section").click();
+    document.querySelector('[data-add-section="timeline"]').click();
+    const original = [...document.querySelectorAll(".division-archive-card")].find(card => card.querySelector("strong").textContent === "Original fixtures");
+    original.querySelector('[data-restore-archive]').click();
+    assert.equal(field(window, "Title").value, "Original fixtures");
+    assert.equal(field(window, "Title").closest("label").querySelector(".division-formatted-text").textContent, "Original");
+    document.querySelector(".division-inline-cancel").click();
+    assert.equal(document.querySelector('[data-section="timeline"]'), null, "Cancel keeps the removed timeline out of the page");
+    document.querySelector(".division-add-section").click();
+    document.querySelector('[data-add-section="timeline"]').click();
+    const archivedOriginal = [...document.querySelectorAll(".division-archive-card")].find(card => card.querySelector("strong").textContent === "Original fixtures");
+    archivedOriginal.querySelector('[data-delete-archive]').click();
+    button(window, "Save draft").click(); await tick();
+    assert.equal(model.content.archivedSections.length, 1);
+    assert.equal(model.content.archivedSections[0].content.timeline[0].title, "Fresh fixtures");
+    assert.equal(model.publishedAt, null);
+    assert.equal(writes.length, 4);
+});
+
+test("public poll results are readable while signed-out visitors are offered sign-in instead of a voting form", async t => {
+    const poll = { id: "duration", title: "Preferred match length?", description: "Choose the format you would like to play.", options: ["Five minutes", "Seven minutes"], status: "open" };
+    const published = { ...content(), sectionOrder: ["polls"], polls: [poll] };
+    const writes = [];
+    const window = await page(t, async (path, options) => {
+        if (options.method === "POST") writes.push(path);
+        if (path === "/api/divisions/2/polls") return Response.json({ signedIn: false, polls: [{ ...poll, revision: "published-ballot", counts: [2, 1], total: 3, selectedOption: null, canVote: false }] });
+        assert.equal(path, "/api/divisions/2");
+        return Response.json({ division: { id: 2, content: published, publishedAt: 1 } });
+    }, "#divisions/2", null);
+    const { document } = window;
+    assert.equal(document.querySelector(".division-poll-form"), null);
+    assert.match(document.querySelector(".division-poll-results").textContent, /Five minutes/);
+    assert.match(document.querySelector(".division-poll-status").textContent, /3 votes/);
+    const signIn = [...document.querySelectorAll(".division-poll-voting a")].find(link => link.textContent === "Sign in to vote");
+    assert.ok(signIn);
+    assert.equal(signIn.hash, "#account");
+    const changed = new Promise(resolve => window.addEventListener("hashchange", resolve, { once: true }));
+    signIn.click(); await changed; await tick();
+    assert.equal(window.location.hash, "#account");
+    assert.ok(document.querySelector(".account-form"));
+    assert.deepEqual(writes, []);
+});
+
+test("signed-in poll votes send only the chosen option and revision, stay locked while saving, and can be updated", async t => {
+    const poll = { id: "duration", title: "Preferred match length?", description: "", options: ["Five minutes", "Seven minutes"], status: "open" };
+    const published = { ...content(), sectionOrder: ["polls"], polls: [poll] };
+    const viewer = { bonkId: "1001", username: "PollVoter", isAdmin: false, avatarCode: null };
+    let state = { ...poll, revision: "published-ballot", counts: [1, 0], total: 1, selectedOption: null, canVote: true };
+    let finishVote;
+    const writes = [];
+    const window = await page(t, async (path, options) => {
+        if (path === "/api/manage/divisions/2") return Response.json({ error: "Division access is required." }, { status: 403 });
+        if (path === "/api/divisions/2/polls") return Response.json({ signedIn: true, polls: [state] });
+        if (path === "/api/divisions/2/polls/duration/vote") {
+            writes.push(JSON.parse(options.body));
+            return new Promise(resolve => { finishVote = next => { state = { ...state, ...next }; resolve(Response.json({ signedIn: true, polls: [state] })); }; });
+        }
+        assert.equal(path, "/api/divisions/2");
+        return Response.json({ division: { id: 2, content: published, publishedAt: 1 } });
+    }, "#divisions/2", viewer);
+    const { document } = window;
+    const submit = option => {
+        const form = document.querySelector(".division-poll-form");
+        assert.ok(form);
+        form.querySelector(`input[value="${option}"]`).checked = true;
+        form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    };
+    submit(1);
+    assert.deepEqual(writes, [{ option: 1, revision: "published-ballot" }]);
+    assert.equal(document.querySelector(".division-poll-form fieldset").disabled, true);
+    assert.equal(document.querySelector('.division-poll-form button[type="submit"]').disabled, true);
+    finishVote({ counts: [1, 1], total: 2, selectedOption: 1 }); await tick();
+    assert.equal(document.querySelector('.division-poll-form input[value="1"]').checked, true);
+    assert.equal(document.querySelector('.division-poll-form button[type="submit"]').textContent, "Update vote");
+    assert.match(document.querySelector(".division-poll-status").textContent, /Your vote was saved/);
+    submit(0);
+    assert.deepEqual(writes[1], { option: 0, revision: "published-ballot" });
+    finishVote({ counts: [2, 0], total: 2, selectedOption: 0 }); await tick();
+    assert.equal(document.querySelector('.division-poll-form input[value="0"]').checked, true);
+    assert.equal(document.querySelector('.division-poll-form input[value="1"]').checked, false);
+    assert.match(document.querySelector(".division-poll-results").textContent, /2 · 100%/);
+    assert.equal(document.querySelector(".division-management-tools"), null);
+});
+
+test("a rejected poll vote keeps the server-confirmed selection and shows the error", async t => {
+    const poll = { id: "duration", title: "Preferred match length?", description: "", options: ["Five minutes", "Seven minutes"], status: "open" };
+    const published = { ...content(), sectionOrder: ["polls"], polls: [poll] };
+    const viewer = { bonkId: "1001", username: "PollVoter", isAdmin: false, avatarCode: null };
+    const window = await page(t, async (path, options) => {
+        if (path === "/api/manage/divisions/2") return Response.json({ error: "Division access is required." }, { status: 403 });
+        if (path === "/api/divisions/2/polls") return Response.json({ signedIn: true, polls: [{ ...poll, revision: "published-ballot", counts: [1, 1], total: 2, selectedOption: 1, canVote: true }] });
+        if (path === "/api/divisions/2/polls/duration/vote") {
+            assert.equal(options.method, "POST");
+            return Response.json({ error: "This poll changed. Refresh its current choices." }, { status: 409 });
+        }
+        assert.equal(path, "/api/divisions/2");
+        return Response.json({ division: { id: 2, content: published, publishedAt: 1 } });
+    }, "#divisions/2", viewer);
+    const { document } = window;
+    const form = document.querySelector(".division-poll-form");
+    form.querySelector('input[value="0"]').checked = true;
+    form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true })); await tick();
+    assert.match(document.querySelector(".division-poll-status").textContent, /This poll changed/);
+    assert.equal(document.querySelector('.division-poll-form input[value="1"]').checked, true);
+    assert.equal(document.querySelector('.division-poll-form input[value="0"]').checked, false);
+    assert.equal(document.querySelector('.division-poll-form button[type="submit"]').disabled, false);
+});
+
+test("a delayed results refresh cannot overwrite a subsequently confirmed vote", async t => {
+    const poll = { id: "duration", title: "Preferred match length?", description: "", options: ["Five minutes", "Seven minutes"], status: "open" };
+    const published = { ...content(), sectionOrder: ["polls"], polls: [poll] };
+    const original = { ...poll, revision: "published-ballot", counts: [4, 0], total: 4, selectedOption: null, canVote: true };
+    const confirmed = { ...original, counts: [4, 1], total: 5, selectedOption: 1 };
+    const viewer = { bonkId: "1001", username: "PollVoter", isAdmin: false, avatarCode: null };
+    let holdRefresh = false;
+    let finishRefresh;
+    let finishVote;
+    const writes = [];
+    const window = await page(t, async (path, options) => {
+        if (path === "/api/manage/divisions/2") return Response.json({ error: "Division access is required." }, { status: 403 });
+        if (path === "/api/divisions/2/polls") {
+            return holdRefresh ? new Promise(resolve => { finishRefresh = resolve; })
+                : Response.json({ signedIn: true, polls: [original] });
+        }
+        if (path === "/api/divisions/2/polls/duration/vote") {
+            writes.push(JSON.parse(options.body));
+            return new Promise(resolve => { finishVote = resolve; });
+        }
+        assert.equal(path, "/api/divisions/2");
+        return Response.json({ division: { id: 2, content: published, publishedAt: 1 } });
+    }, "#divisions/2", viewer);
+    const { document } = window;
+    holdRefresh = true;
+    button(window, "Refresh results").click();
+    assert.equal(typeof finishRefresh, "function", "the earlier results request remains pending");
+    const form = document.querySelector(".division-poll-form");
+    form.querySelector('input[value="1"]').checked = true;
+    form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    assert.deepEqual(writes, [{ option: 1, revision: "published-ballot" }]);
+    assert.ok([...document.querySelectorAll(".division-poll-form fieldset, .division-poll-voting button")].every(control => control.disabled), "voting locks forms and manual refresh until the server responds");
+    finishVote(Response.json({ signedIn: true, polls: [confirmed] })); await tick();
+    assert.equal(document.querySelector('.division-poll-form input[value="1"]').checked, true);
+    assert.match(document.querySelectorAll(".division-poll-result-line")[1].textContent, /1 · 20%/);
+    finishRefresh(Response.json({ signedIn: true, polls: [original] })); await tick();
+    assert.equal(document.querySelector('.division-poll-form input[value="1"]').checked, true, "the old GET cannot clear the saved vote selection");
+    assert.match(document.querySelectorAll(".division-poll-result-line")[1].textContent, /1 · 20%/, "the old GET cannot restore outdated counts");
+    assert.match(document.querySelector(".division-poll-status").textContent, /Your vote was saved/);
+    assert.equal(button(window, "Refresh results").disabled, false);
+});
+
+test("managers cannot vote against an unpublished poll question even when its published predecessor is open", async t => {
+    const poll = { id: "duration", title: "Unpublished question", description: "Draft details.", options: ["Five minutes", "Seven minutes"], status: "open" };
+    let model = { ...modelFor({ ...content(), sectionOrder: ["polls"], polls: [poll] }), publishedAt: 1, publishedVersion: 1, version: 2 };
+    const calls = [];
+    const window = await page(t, async (path, options) => {
+        calls.push({ path, method: options.method || "GET" });
+        if (path === "/api/divisions/1/polls") return Response.json({ signedIn: true, polls: [{ ...poll, title: "Published question", revision: "published-ballot", counts: [1, 0], total: 1, selectedOption: null, canVote: true }] });
+        assert.equal(path, "/api/manage/divisions/1");
+        if (options.method === "PUT") {
+            const body = JSON.parse(options.body);
+            model = { ...model, content: body.content, version: body.version + 1 };
+        }
+        return Response.json({ division: model });
+    }, "#divisions/1");
+    const { document } = window;
+    assert.equal(document.querySelector(".division-poll-form"), null);
+    assert.match(document.querySelector(".division-poll-status").textContent, /Save and publish this version/);
+    editSection(window, "polls");
+    input(window, field(window, "Question or title"), "Saved unpublished question");
+    document.querySelector(".division-inline-save").click(); await tick();
+    assert.equal(model.content.polls[0].title, "Saved unpublished question");
+    assert.equal(model.publishedVersion, 1);
+    assert.equal(document.querySelector(".division-poll-form"), null);
+    assert.match(document.querySelector(".division-poll-status").textContent, /Save and publish this version/);
+    assert.equal(calls.some(call => call.path.endsWith("/vote")), false);
 });

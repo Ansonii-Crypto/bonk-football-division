@@ -269,7 +269,8 @@ async function api(request, env, url) {
         return logout(request, env);
     }
     if (divisionMethods) {
-        const account = url.pathname.startsWith("/api/divisions") ? null : await getAccount(request, env);
+        const publicPoll = /^\/api\/divisions\/[1-9][0-9]*\/polls(?:\/|$)/.test(url.pathname);
+        const account = url.pathname.startsWith("/api/divisions") && !publicPoll ? null : await getAccount(request, env);
         return handleDivisionRequest(request, env, url, account, req => readJson(req, 65536), json, positiveBonkId);
     }
     if (url.pathname === "/api/admin/bonk-accounts") {

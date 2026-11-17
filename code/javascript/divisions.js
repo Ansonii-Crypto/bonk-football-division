@@ -1,14 +1,15 @@
 "use strict";
 
 (() => {
-    const sectionNames = { general: "Event information", appearance: "Background", banner: "Banner", participation: "Participation", timeline: "Timeline", teams: "Teams and players", bracket: "Tournament bracket", campaigns: "Campaigns", referendums: "Referendums" };
+    const sectionNames = { general: "Event information", appearance: "Background", banner: "Banner", participation: "Participation", timeline: "Timeline", teams: "Teams and players", bracket: "Tournament bracket", campaigns: "Campaigns", referendums: "Referendums", polls: "Polls", custom: "Text section" };
     const sectionDescriptions = {
         participation: "Match format and how players can take part.",
         timeline: "Dates, milestones and event announcements.",
         teams: "Entrants and their player rosters.",
         bracket: "Fixtures, results and the route to the final.",
         campaigns: "Announcements and campaigns for the event.",
-        referendums: "Proposals and the choices being discussed."
+        referendums: "Proposals and the choices being discussed.",
+        polls: "Questions that signed-in Bonk accounts can vote on."
     };
     const roleNames = { "site-admin": "Site administrator", director: "Division director", organizer: "Organiser", editor: "Editor" };
     const statusNames = { upcoming: "Upcoming", registration: "Registration open", live: "Live", completed: "Completed" };
@@ -294,7 +295,6 @@
         section.append(container);
         let model = null;
         let draft = null;
-        let editing = false;
         let selected = "";
         let dirty = false;
         let editRevision = 0;
@@ -309,6 +309,7 @@
         let inlineCancel = null;
         let pickerOpen = false;
         let insertionAfter = null;
+        let archiveTemplate = null;
         let toolMode = "";
         let toolPanel = null;
         let notice;
@@ -329,8 +330,15 @@
         let textSelection = null;
         let formatPanel = null;
         let formatFeedback = "";
+        let pollData = null;
+        let pollError = "";
+        let pollLoading = false;
+        let pollRevision = 0;
+        const votingPolls = new Set();
+        const pollMessages = new Map();
 
         function editable(key) { return model?.permissions?.editSections?.includes(key === "banner" ? "appearance" : key.startsWith("custom:") ? "custom" : key); }
+        function managing() { return Boolean(model?.permissions?.editSections?.length); }
         function customSection(key) { return draft.customSections?.find(item => `custom:${item.id}` === key); }
         function snapshot() { return { content: clone(draft), dirty, message }; }
         function sameContent(first, second) {
@@ -340,6 +348,7 @@
                 result.appearance = { ...appearance, bannerColor: appearance.bannerColor ?? appearance.backgroundColor ?? "",
                     bannerImage: appearance.bannerImage ?? appearance.backgroundImage ?? "" };
                 if (result.textStyles && !Object.keys(result.textStyles).length) delete result.textStyles;
+                for (const key of ["polls", "archivedSections"]) if (!result[key]?.length) delete result[key];
                 return result;
             };
             return JSON.stringify(comparable(first)) === JSON.stringify(comparable(second));
@@ -507,8 +516,9 @@
             applyBackground(backdrop, draft.appearance);
             section.classList.toggle("division-custom-background", !backdrop.hidden);
             preview.replaceChildren(window.DivisionView.render(draft, {
-                editing, selectedSection: selected, editableSections: model.permissions?.editSections || [],
+                selectedSection: selected, editableSections: model.permissions?.editSections || [],
                 onSection: selectSection,
+                onPollMount: renderPoll,
                 onBanner() { selectSection("banner"); },
                 onAddSection(afterKey) { selectSection("add", afterKey); },
                 onMoveSection(key, offset) {
@@ -529,19 +539,13 @@
                 },
                 onRemoveSection(key) {
                     if (!editable(key) || pending) return;
-                    finishEditing();
-                    const before = clone(draft);
-                    draft.sectionOrder = window.DivisionView.sectionOrder(draft).filter(value => value !== key);
-                    remember(before);
-                    pickerOpen = false;
-                    change();
-                    preview.querySelector(".division-add-section")?.focus({ preventScroll: true });
+                    removeSection(key);
                 }
             }));
             if (inlineEditorOpen()) {
                 const target = [...preview.querySelectorAll("[data-section]")].find(node => node.dataset.section === activeEditor.key);
                 if (target) target.replaceChildren(renderInlineEditor());
-            } else if (pickerOpen && editing) {
+            } else if (pickerOpen && managing()) {
                 const panel = element("div", "division-add-panel");
                 panel.append(element("p", "division-eyebrow", "Build your page"), element("h2", "", "Add a section"));
                 editSectionPicker(panel);
@@ -555,6 +559,9 @@
                 else preview.append(panel);
             }
             refreshSectionRail();
+            if (!pollData && !pollLoading && !pollError && preview.querySelector(".division-poll-voting")) {
+                window.queueMicrotask(() => { if (section.isConnected) void loadPolls(); });
+            }
         }
         function selectSection(key, afterKey = null) {
             if (pending) return;
@@ -565,6 +572,7 @@
             parkEditor();
             if (key === "add") {
                 insertionAfter = afterKey || window.DivisionView.sectionOrder(draft).at(-1) || "general";
+                archiveTemplate = null;
                 pickerOpen = true; toolMode = "";
                 if (position) paintAtScrollPosition(position); else paint();
                 return;
@@ -574,7 +582,6 @@
         function beginSection(key, before = snapshot(), position = null, insertedAfter = null) {
             if (!editable(key) || activeEditor || pending) return;
             selected = key;
-            editing = true;
             pickerOpen = false;
             toolMode = "";
             activeEditor = { key, before, insertedAfter, error: "" };
@@ -635,6 +642,7 @@
             return form;
         }
         async function load() {
+            pollRevision += 1; pollLoading = false; pollData = null; pollError = "";
             try {
                 let data;
                 if (window.BonkAccount.session().account) {
@@ -645,14 +653,124 @@
                 if (!section.isConnected) return;
                 model = data.division;
                 draft = clone(model.content);
+                draft.polls ||= [];
+                draft.archivedSections ||= [];
                 dirty = false; pending = false; message = "";
                 activeEditor = null; selected = ""; pickerOpen = false; toolMode = "";
                 undoHistory.length = 0; redoHistory.length = 0;
                 document.title = `${draft.name} | Bonk Football Division`;
                 paint();
+                void loadPolls();
             } catch (error) {
                 if (section.isConnected) container.replaceChildren(element("p", "division-error", error.message), button("Try again", () => void load()));
             }
+        }
+        function refreshPolls() {
+            for (const node of preview?.querySelectorAll(".division-poll-voting") || []) {
+                const poll = (draft.polls || []).find(item => item.id === node.closest("[data-poll-id]")?.dataset.pollId);
+                if (poll) renderPoll(node, poll);
+            }
+        }
+        async function loadPolls(force = false) {
+            if (!section.isConnected || !preview?.querySelector(".division-poll-voting") || pollLoading || votingPolls.size || pollData && !force) return;
+            const revision = ++pollRevision;
+            pollLoading = true; pollError = "";
+            refreshPolls();
+            try {
+                const data = await request(`/api/divisions/${encodeURIComponent(divisionId)}/polls`);
+                if (!Array.isArray(data.polls) || typeof data.signedIn !== "boolean") throw new Error("Poll results could not be read.");
+                if (!section.isConnected || revision !== pollRevision) return;
+                pollData = data;
+            } catch (error) {
+                if (!section.isConnected || revision !== pollRevision) return;
+                if (error.status === 404) pollData = { polls: [], signedIn: Boolean(window.BonkAccount.session().account) };
+                else pollError = error.message;
+            } finally {
+                if (section.isConnected && revision === pollRevision) { pollLoading = false; refreshPolls(); }
+            }
+        }
+        function renderPoll(node, poll) {
+            node.replaceChildren();
+            if (!pollData) {
+                const status = element("p", "division-poll-status", pollError || "Loading poll results…");
+                status.setAttribute("role", "status"); node.append(status);
+                if (pollError) node.append(button("Try again", () => void loadPolls(true)));
+                return;
+            }
+            const current = pollData.polls.find(item => item.id === poll.id);
+            const matches = current && current.title === poll.title && current.status === poll.status
+                && JSON.stringify(current.options) === JSON.stringify(poll.options);
+            if (!matches) {
+                const choices = element("ul", "division-referendum-options");
+                for (const option of poll.options || []) choices.append(element("li", "", option));
+                node.append(choices, element("p", "division-poll-status", managing()
+                    ? "Save and publish this version of the poll before people can vote."
+                    : "This poll has changed. Refresh the division to see its current choices."));
+                return;
+            }
+            const voting = votingPolls.has(poll.id);
+            const busy = votingPolls.size > 0;
+            const status = element("p", "division-poll-status");
+            status.setAttribute("role", "status");
+            const canVote = current.canVote === true && pollData.signedIn;
+            if (canVote) {
+                const form = element("form", "division-poll-form");
+                form.setAttribute("aria-label", `Vote: ${poll.title}`);
+                const options = element("fieldset", "division-poll-choices");
+                options.disabled = busy;
+                options.append(element("legend", "division-muted", "Choose one answer"));
+                for (const [index, text] of poll.options.entries()) {
+                    const label = element("label", "division-poll-choice");
+                    const radio = element("input"); radio.type = "radio"; radio.name = `poll-${divisionId}-${poll.id}`; radio.value = String(index);
+                    radio.required = true; radio.checked = current.selectedOption === index;
+                    label.append(radio, element("span", "", text)); options.append(label);
+                }
+                const actions = element("div", "division-poll-actions");
+                const submit = element("button", "division-button division-button--primary", voting ? "Saving vote…" : current.selectedOption === null ? "Vote" : "Update vote");
+                submit.type = "submit"; submit.disabled = busy;
+                actions.append(submit); form.append(options, actions);
+                form.addEventListener("submit", async event => {
+                    event.preventDefault();
+                    const selectedChoice = form.querySelector("input:checked");
+                    if (votingPolls.size || !selectedChoice || !form.reportValidity()) return;
+                    pollRevision += 1; pollLoading = false;
+                    votingPolls.add(poll.id); pollMessages.delete(poll.id); refreshPolls();
+                    try {
+                        const data = await request(`/api/divisions/${encodeURIComponent(divisionId)}/polls/${encodeURIComponent(poll.id)}/vote`, "POST", {
+                            option: Number(selectedChoice.value), revision: current.revision
+                        });
+                        if (!Array.isArray(data.polls) || typeof data.signedIn !== "boolean") throw new Error("The vote response could not be read. Refresh the poll results.");
+                        if (!section.isConnected) return;
+                        pollData = data; pollMessages.set(poll.id, "Your vote was saved.");
+                    } catch (error) {
+                        if (section.isConnected) pollMessages.set(poll.id, error.message);
+                    } finally {
+                        votingPolls.delete(poll.id);
+                        if (section.isConnected) refreshPolls();
+                    }
+                });
+                node.append(form);
+            } else if (poll.status === "open" && !pollData.signedIn) {
+                const signIn = element("a", "division-button", "Sign in to vote"); signIn.href = "#account";
+                node.append(signIn);
+            }
+            const results = element("div", "division-poll-results");
+            results.setAttribute("aria-label", `Results: ${poll.title}`);
+            for (const [index, label] of poll.options.entries()) {
+                const count = Number.isSafeInteger(current.counts?.[index]) && current.counts[index] >= 0 ? current.counts[index] : 0;
+                const percent = current.total > 0 ? Math.round(count / current.total * 100) : 0;
+                const result = element("div", "division-poll-result");
+                const fill = element("span", "division-poll-result-fill"); fill.setAttribute("aria-hidden", "true"); fill.style.setProperty("--poll-percent", `${Math.min(100, percent)}%`);
+                const line = element("div", "division-poll-result-line");
+                line.append(element("span", "", `${label}${current.selectedOption === index ? " · your vote" : ""}`), element("span", "", `${count} · ${percent}%`));
+                result.append(fill, line); results.append(result);
+            }
+            node.append(results);
+            const votes = `${current.total} ${current.total === 1 ? "vote" : "votes"}`;
+            status.textContent = voting ? "Saving your vote…" : pollMessages.get(poll.id) || (poll.status === "closed" ? `${votes} · Voting is closed.`
+                : poll.status === "planned" ? `${votes} · Voting has not opened yet.` : `${votes} · One vote per account. You can change your choice.`);
+            const refresh = button("Refresh results", () => void loadPolls(true)); refresh.disabled = busy;
+            node.append(status, refresh);
         }
         async function save() {
             if (pending || !dirty) return false;
@@ -687,7 +805,7 @@
                 if (!section.isConnected) return;
                 model = data.division; message = "Event published";
             } catch (error) { message = error.message; }
-            finally { pending = false; if (section.isConnected) paint(); }
+            finally { pending = false; if (section.isConnected) { paint(); void loadPolls(true); } }
         }
         async function unpublish() {
             if (pending) return;
@@ -697,7 +815,7 @@
                 if (!section.isConnected) return;
                 model = data.division; message = "Event unpublished · draft preview is preserved";
             } catch (error) { message = error.message; }
-            finally { pending = false; if (section.isConnected) paint(); }
+            finally { pending = false; if (section.isConnected) { paint(); void loadPolls(true); } }
         }
         function paint() {
             scrollRestoreRevision += 1;
@@ -724,13 +842,6 @@
                 identity.append(heading);
                 notice = element("p", "division-message"); notice.setAttribute("role", "status"); identity.append(notice);
                 const actions = element("div", "division-management-actions");
-                const modes = element("div", "division-mode-switch");
-                modes.append(element("p", "division-tool-group-label", "Mode"));
-                const view = button("View", () => setMode(false));
-                const edit = button("Edit", () => setMode(true));
-                view.disabled = pending; edit.disabled = pending;
-                view.setAttribute("aria-pressed", String(!editing)); edit.setAttribute("aria-pressed", String(editing));
-                modes.append(view, edit);
                 const pageActions = element("div", "division-page-actions");
                 pageActions.append(element("p", "division-tool-group-label", "Publication"));
                 saveButton = button("Save draft", () => { finishEditing(); void save(); }, "division-button--primary");
@@ -760,7 +871,7 @@
                 undoButton = button("Undo", () => travelHistory(true));
                 redoButton = button("Redo", () => travelHistory(false));
                 history.append(undoButton, redoButton);
-                actions.append(modes, pageActions, settings, history);
+                actions.append(pageActions, settings, history);
                 const reload = button("Reload saved draft", () => {
                     if (!dirty || window.confirm("Discard the unsaved preview changes and reload the saved draft?")) void load();
                 });
@@ -779,7 +890,7 @@
                 }
                 dock.append(toggle, toolbar); slot.append(dock); container.append(slot);
             }
-            const workspace = element("div", `division-workspace${editing ? " is-editing" : ""}`);
+            const workspace = element("div", `division-workspace${managing() ? " is-editing" : ""}`);
             preview = element("div", "division-live-preview"); workspace.append(preview);
             container.append(workspace);
             paintPreview();
@@ -817,12 +928,6 @@
                 setToolsOpen(false, true);
             }, { signal: events.signal });
             for (const type of ["hashchange", "bonk-account-change"]) window.addEventListener(type, () => events.abort(), { signal: events.signal, once: true });
-        }
-
-        function setMode(value) {
-            const position = activeEditor ? editorScrollPosition() : null;
-            parkEditor(); editing = value; pickerOpen = false; toolMode = "";
-            if (position) paintAtScrollPosition(position); else paint();
         }
 
         function renderFormattingPanel() {
@@ -1119,11 +1224,97 @@
             if (selected === "appearance") editAppearance(body);
             if (selected === "banner") editAppearance(body, true);
             if (selected === "participation") editParticipation(body);
-            if (["timeline", "campaigns", "referendums"].includes(selected)) editCollection(body, selected);
+            if (["timeline", "campaigns", "referendums", "polls"].includes(selected)) editCollection(body, selected);
             if (selected === "teams") editTeams(body);
             if (selected === "bracket") editBracket(body);
             if (selected.startsWith("custom:")) editCustomSection(body);
             updateFormattingPanel();
+        }
+        function sectionPayload(key) {
+            const type = key.startsWith("custom:") ? "custom" : key;
+            if (type === "custom") return { customSections: customSection(key) ? [clone(customSection(key))] : [] };
+            if (["teams", "bracket"].includes(type)) return { teams: clone(draft.teams || []), results: clone(draft.results || {}) };
+            if (type === "participation") return { participation: clone(draft.participation) };
+            return { [type]: clone(draft[type] || []) };
+        }
+        function sectionStyles(key) {
+            const type = key.startsWith("custom:") ? "custom" : key;
+            const prefix = type === "custom" ? `custom.${key.slice(7)}.` : type === "bracket" ? "teams." : `${type}.`;
+            return Object.fromEntries(Object.entries(draft.textStyles || {}).filter(([path]) => path.startsWith(prefix)).map(([path, runs]) => [path, clone(runs)]));
+        }
+        function archiveable(type, payload) {
+            const items = type === "custom" ? payload.customSections : payload[type];
+            const validText = (value, maximum, required = false) => typeof value === "string" && value.length <= maximum
+                && (!required || value.trim().length > 0) && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
+            if (type === "participation") return Boolean(payload.participation);
+            if (["teams", "bracket"].includes(type)) return Boolean(payload.teams.length && payload.teams.every(team => validText(team.name, 100, true) && team.players?.length
+                && team.players.length <= 4 && team.players.every(player => validText(player.username, 100, true)))
+                && Object.values(payload.results).every(result => [result.scoreA, result.scoreB].every(score => score === null || Number.isInteger(score) && score >= 0 && score <= 99)));
+            if (!Array.isArray(items) || !items.length) return false;
+            return items.every(item => validText(item.title, ["polls", "referendums"].includes(type) ? 200 : 120, true)
+                && validText(item.description, type === "timeline" ? 1000 : type === "custom" ? 6000 : 2000)
+                && (type !== "timeline" || item.date === "" || /^\d{4}-\d{2}-\d{2}$/.test(item.date) && Number.isFinite(Date.parse(`${item.date}T00:00:00Z`)) && new Date(`${item.date}T00:00:00Z`).toISOString().slice(0, 10) === item.date)
+                && (!["polls", "referendums"].includes(type) || ["planned", "open", "closed"].includes(item.status) && item.options?.length >= 2 && item.options.length <= 8 && item.options.every(option => validText(option, 120, true))
+                    && (type !== "polls" || new Set(item.options.map(option => option.trim().toLowerCase())).size === item.options.length)));
+        }
+        function archiveSnapshot(key, legacy = false) {
+            const type = key.startsWith("custom:") ? "custom" : key;
+            const content = sectionPayload(key);
+            if (!archiveable(type, content)) return null;
+            const first = type === "custom" ? content.customSections[0]?.title : content[type]?.[0]?.title;
+            return { id: id(), type, title: (first || sectionNames[type] || "Section").slice(0, 120),
+                archivedAt: legacy ? 0 : Date.now(), content, textStyles: sectionStyles(key), ...(legacy ? { legacy: true } : {}) };
+        }
+        function archivesFor(type) {
+            const archives = (draft.archivedSections || []).filter(item => item.type === type);
+            const order = window.DivisionView.sectionOrder(draft);
+            const keys = type === "custom" ? (draft.customSections || []).filter(item => !order.includes(`custom:${item.id}`)).map(item => `custom:${item.id}`)
+                : order.includes(type) ? [] : [type];
+            for (const key of keys) {
+                const legacy = archiveSnapshot(key, true);
+                if (legacy && !archives.some(item => JSON.stringify(item.content) === JSON.stringify(legacy.content))) archives.push(legacy);
+            }
+            return archives;
+        }
+        function clearSectionStyles(key) {
+            for (const path of Object.keys(sectionStyles(key))) delete draft.textStyles[path];
+        }
+        function resetTemplate(type) {
+            if (type === "custom") {
+                const item = { id: id(), title: "New text section", description: "" };
+                draft.customSections = [...(draft.customSections || []), item];
+                return `custom:${item.id}`;
+            }
+            if (type !== "bracket") clearSectionStyles(type);
+            if (type === "participation") draft.participation = { mode: "teams", teamSize: 2, registration: "closed", description: "" };
+            else if (type === "teams") { draft.teams = []; draft.results = {}; }
+            else if (type === "bracket") draft.results = {};
+            else draft[type] = [];
+            return type;
+        }
+        function removeSection(key) {
+            finishEditing();
+            const position = editorScrollPosition();
+            const before = clone(draft);
+            const archived = archiveSnapshot(key);
+            draft.archivedSections ||= [];
+            if (archived && draft.archivedSections.length >= 30) {
+                message = "The section archive is full. Delete an older archive from Add section before removing another section.";
+                updateNotice(); return;
+            }
+            if (archived) draft.archivedSections.push(archived);
+            draft.sectionOrder = window.DivisionView.sectionOrder(draft).filter(value => value !== key);
+            if (key.startsWith("custom:")) {
+                clearSectionStyles(key);
+                draft.customSections = (draft.customSections || []).filter(item => `custom:${item.id}` !== key);
+            } else if (["timeline", "campaigns", "referendums", "polls"].includes(key)) {
+                clearSectionStyles(key); draft[key] = [];
+            }
+            remember(before); pickerOpen = false; archiveTemplate = null;
+            change();
+            message = archived ? "Section archived · save the draft to keep this change" : "Incomplete section removed · save the draft to keep this change";
+            paintAtScrollPosition(position);
+            preview.querySelector(".division-add-section")?.focus({ preventScroll: true });
         }
         function editSectionPicker(body) {
             const order = window.DivisionView.sectionOrder(draft);
@@ -1140,36 +1331,88 @@
                 message = "New section · save or cancel to finish adding it";
                 beginSection(key, before, null, insertionAfter);
             }
+            function createFresh(type) {
+                if (pending || activeEditor) return;
+                const before = snapshot();
+                const legacy = archivesFor(type).filter(item => item.legacy);
+                if ((draft.archivedSections?.length || 0) + legacy.length > 30) {
+                    message = "Delete an older archived section before creating a new version."; updateNotice(); return;
+                }
+                for (const record of legacy) {
+                    const { legacy: ignored, ...archive } = record;
+                    draft.archivedSections ||= []; draft.archivedSections.push(archive);
+                }
+                addToPage(resetTemplate(type), before);
+            }
+            function chooseTemplate(type) {
+                if (pending || activeEditor) return;
+                if (!archivesFor(type).length) { createFresh(type); return; }
+                archiveTemplate = type; paintAtScrollPosition(editorScrollPosition());
+            }
+            if (archiveTemplate) {
+                const picker = element("section", "division-archive-picker");
+                picker.append(element("h3", "", `${sectionNames[archiveTemplate]}: new or archived?`),
+                    element("p", "division-muted", "Start with an empty template, or restore one of the sections removed from this division."));
+                const fresh = button("Create new", () => createFresh(archiveTemplate), "division-button--primary");
+                fresh.dataset.createNewSection = archiveTemplate;
+                picker.append(fresh);
+                for (const archive of archivesFor(archiveTemplate)) {
+                    const card = element("article", "division-archive-card");
+                    const info = element("div");
+                    info.append(element("strong", "", archive.title), element("p", "division-muted", archive.archivedAt
+                        ? new Date(archive.archivedAt).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Previously saved section"));
+                    if (["teams", "bracket"].includes(archive.type)) info.append(element("p", "division-muted", "Restores its entrants and bracket results, increasing the match size if those teams need more players."));
+                    const actions = element("div", "division-archive-actions");
+                    const restore = button("Restore", () => {
+                        if (pending || activeEditor) return;
+                        const before = snapshot();
+                        const key = archive.type === "custom" ? `custom:${archive.content.customSections[0].id}` : archive.type;
+                        clearSectionStyles(key);
+                        if (archive.type === "custom") draft.customSections = [...(draft.customSections || []).filter(item => `custom:${item.id}` !== key), ...clone(archive.content.customSections)];
+                        else Object.assign(draft, clone(archive.content));
+                        if (["teams", "bracket"].includes(archive.type)) {
+                            const size = Math.max(1, ...draft.teams.map(team => team.players.length));
+                            if (size > draft.participation.teamSize) draft.participation = { ...draft.participation, mode: "teams", teamSize: size };
+                        }
+                        draft.textStyles = { ...(draft.textStyles || {}), ...clone(archive.textStyles || {}) };
+                        draft.archivedSections = (draft.archivedSections || []).filter(item => item.id !== archive.id);
+                        addToPage(key, before);
+                    });
+                    restore.dataset.restoreArchive = archive.id;
+                    const remove = button("Delete archive", () => {
+                        if (pending || activeEditor) return;
+                        const position = editorScrollPosition(); const before = clone(draft);
+                        if (archive.legacy) {
+                            if (archive.type === "custom") {
+                                const key = `custom:${archive.content.customSections[0].id}`; clearSectionStyles(key);
+                                draft.customSections = (draft.customSections || []).filter(item => item.id !== archive.content.customSections[0].id);
+                            } else resetTemplate(archive.type);
+                        } else draft.archivedSections = (draft.archivedSections || []).filter(item => item.id !== archive.id);
+                        remember(before); change(); message = "Archived section deleted · save the draft to keep this change";
+                        paintAtScrollPosition(position);
+                    }, "division-button--danger");
+                    remove.dataset.deleteArchive = archive.id;
+                    actions.append(restore, remove); card.append(info, actions); picker.append(card);
+                }
+                picker.append(button("Back to templates", () => { archiveTemplate = null; paintAtScrollPosition(editorScrollPosition()); }));
+                body.append(picker); return;
+            }
             if (editable("custom")) {
-                const addText = button("", () => {
-                    if (pending || activeEditor) return;
-                    const before = snapshot();
-                    const item = { id: id(), title: "New text section", description: "" };
-                    draft.customSections = [...(draft.customSections || []), item];
-                    addToPage(`custom:${item.id}`, before);
-                }, "division-section-choice");
+                const addText = button("", () => chooseTemplate("custom"), "division-section-choice");
                 addText.dataset.addSection = "custom";
                 addText.disabled = (draft.customSections?.length || 0) >= 20;
                 addText.append(element("strong", "", "+ Text section"), element("span", "", "A heading and text for anything else your event needs."));
                 choices.append(addText);
-                for (const item of draft.customSections || []) {
-                    const key = `custom:${item.id}`;
-                    if (order.includes(key)) continue;
-                    const restore = button("", () => addToPage(key), "division-section-choice");
-                    restore.dataset.addSection = key;
-                    restore.append(element("strong", "", item.title), element("span", "", "Restore this saved text section."));
-                    choices.append(restore);
-                }
             }
             for (const key of available) {
                 const present = order.includes(key);
-                const choice = button("", () => present ? selectSection(key) : addToPage(key), `division-section-choice${present ? " division-section-choice--present" : ""}`);
+                const choice = button("", () => present ? selectSection(key) : chooseTemplate(key), `division-section-choice${present ? " division-section-choice--present" : ""}`);
                 choice.dataset.addSection = key;
                 choice.append(element("strong", "", sectionNames[key]), element("span", "", present ? "Already on this page · edit section" : sectionDescriptions[key]));
                 choices.append(choice);
             }
             if (!choices.childElementCount) choices.append(element("p", "division-muted", "All available sections are on the page."));
-            body.append(choices, element("p", "division-editor-note", "Built-in sections appear once per page. Choose an existing section to edit it, or add a missing section here. Text sections can be added more than once."));
+            body.append(choices, element("p", "division-editor-note", "Built-in sections appear once per page. Removed sections are kept in the private archive; choose a new template or restore an archived version. Text sections can be added more than once."));
         }
         function editCustomSection(body) {
             const item = customSection(selected);
@@ -1221,26 +1464,28 @@
         }
         function editCollection(body, key) {
             const limit = key === "timeline" ? 30 : 12;
+            draft[key] ||= [];
             draft[key].forEach((item, index) => {
                 const entry = element("div", "division-editor-entry"); const heading = element("div", "division-editor-entry-heading");
                 heading.append(element("strong", "", `${key === "timeline" ? "Stage" : "Item"} ${index + 1}`), button("Remove", () => { draft[key].splice(index, 1); change(); paintInspector(); }, "division-button--danger")); entry.append(heading);
-                inputField(entry, key === "referendums" ? "Question or title" : "Title", item.title, value => { item.title = value; }, { maxLength: key === "referendums" ? 200 : 120, formatPath: `${key}.${item.id}.title` });
+                inputField(entry, ["referendums", "polls"].includes(key) ? "Question or title" : "Title", item.title, value => { item.title = value; }, { maxLength: ["referendums", "polls"].includes(key) ? 200 : 120, formatPath: `${key}.${item.id}.title` });
                 if (key === "timeline") inputField(entry, "Date", item.date, value => { item.date = value; }, { type: "date" });
                 inputField(entry, "Description", item.description, value => { item.description = value; }, { multiline: true, maxLength: key === "timeline" ? 1000 : 2000, formatPath: `${key}.${item.id}.description` });
-                if (key === "referendums") {
+                if (["referendums", "polls"].includes(key)) {
                     inputField(entry, "Status", item.status, value => { item.status = value; }, { options: [["planned", "Planned"], ["open", "Open"], ["closed", "Closed"]] });
                     inputField(entry, "Choices, one per line", item.options.join("\n"), value => { item.options = value.split("\n").filter(Boolean); }, { multiline: true, maxLength: 1000 });
                 }
                 body.append(entry);
             });
-            const add = button(`Add ${key === "timeline" ? "timeline stage" : key === "campaigns" ? "campaign" : "referendum"}`, () => {
+            const add = button(`Add ${key === "timeline" ? "timeline stage" : key === "campaigns" ? "campaign" : key === "polls" ? "poll" : "referendum"}`, () => {
                 const item = { id: id(), title: "", description: "" };
                 if (key === "timeline") item.date = "";
-                if (key === "referendums") Object.assign(item, { options: [], status: "planned" });
+                if (["referendums", "polls"].includes(key)) Object.assign(item, { options: [], status: "planned" });
                 draft[key].push(item); change(); paintInspector();
             });
             add.disabled = draft[key].length >= limit; body.append(add);
             if (key === "referendums") body.append(element("p", "division-editor-note", "Referendums are information blocks in this template. Voting is not enabled."));
+            if (key === "polls") body.append(element("p", "division-editor-note", "Publish an open poll to accept votes from signed-in Bonk accounts. Each account has one vote and can change its choice. Changing the question or choices starts a new set of votes after publication."));
         }
         function editTeams(body) {
             body.append(element("p", "division-editor-note", `Team order determines seeding. Up to ${draft.participation.teamSize} players per side. Adding or removing entrants clears bracket scores.`));

@@ -39,6 +39,17 @@
     flex-wrap: wrap;
     gap: 0.35rem;
     margin-left: auto;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease;
+}
+
+.division-event-section--editable:hover > .division-section-heading .division-section-actions,
+.division-event-section--editable:focus-within > .division-section-heading .division-section-actions,
+.division-event-hero:hover > .division-event-overview > .division-section-heading .division-section-actions,
+.division-event-hero:focus-within > .division-event-overview > .division-section-heading .division-section-actions {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .division-section-actions .division-section-control {
@@ -60,6 +71,31 @@
     font-size: 0.74rem;
     font-weight: 650;
     cursor: pointer;
+}
+
+.division-poll-choices {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.division-poll-choices legend {
+    margin-bottom: 0.5rem;
+    padding: 0;
+}
+
+.division-poll-choice span,
+.division-poll-result-line > :first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.division-poll-result-line > :last-child {
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .division-section-control:hover:not(:disabled) {
@@ -675,6 +711,130 @@
     font-size: 0.76rem;
 }
 
+.division-poll {
+    min-width: 0;
+}
+
+.division-poll-voting {
+    margin-top: 1rem;
+}
+
+.division-poll-form {
+    display: grid;
+    gap: 0.65rem;
+    min-width: 0;
+    margin: 0;
+}
+
+.division-poll-choice {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 0.8rem 0.9rem;
+    color: #d1e3ef;
+    background: #102232;
+    border: 1px solid #3d5a70;
+    border-radius: 0.5rem;
+    font-size: 0.84rem;
+    line-height: 1.5;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.division-poll-choice:hover,
+.division-poll-choice:has(input:checked) {
+    background: #1b3b50;
+    border-color: #79b9d4;
+}
+
+.division-poll-choice:has(input:disabled) {
+    cursor: default;
+}
+
+.division-poll-choice input[type="radio"] {
+    flex: 0 0 auto;
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: #9bdef7;
+}
+
+.division-poll-choice:focus-within {
+    outline: 2px solid #a4d8ee;
+    outline-offset: 2px;
+}
+
+.division-poll-results {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+    margin: 1rem 0;
+    padding: 0;
+    list-style: none;
+}
+
+.division-poll-result {
+    position: relative;
+    display: grid;
+    gap: 0.3rem;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0.75rem 0.85rem;
+    color: #c7deeb;
+    background: #0e202f;
+    border: 1px solid #36566d;
+    border-radius: 0.45rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.division-poll-result-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--poll-percent, 0%);
+    background: rgb(106 189 224 / 15%);
+    pointer-events: none;
+}
+
+.division-poll-result > :not(.division-poll-result-fill) {
+    position: relative;
+}
+
+.division-poll-result-line,
+.division-poll-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.division-poll-result-line > :last-child {
+    flex: 0 0 auto;
+    color: #a3c9dd;
+    font-variant-numeric: tabular-nums;
+}
+
+.division-poll-status {
+    margin: 0.6rem 0;
+    color: #a6c3d7;
+    font-size: 0.78rem;
+    line-height: 1.55;
+}
+
+.division-poll-actions {
+    justify-content: flex-start;
+    margin-top: 0.3rem;
+}
+
+.division-poll-actions .division-button,
+.division-poll-actions a {
+    min-height: 2.5rem;
+}
+
 @media (max-width: 48rem) {
     .division-event-facts {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -718,6 +878,11 @@
 }
 
 @media (pointer: coarse) {
+    .division-poll-actions .division-button,
+    .division-poll-actions a {
+        min-height: 2.75rem;
+    }
+
     .division-section-insert {
         min-height: 2.75rem;
         margin-block: -0.4rem;
@@ -725,12 +890,18 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .division-banner-edit {
+    .division-banner-edit,
+    .division-section-actions {
         transition: none;
     }
 }
 
 @media (hover: none), (pointer: coarse) {
+    .division-section-actions {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
     .division-banner-edit {
         opacity: 1;
         background: rgb(255 255 255 / 16%);

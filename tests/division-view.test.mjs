@@ -259,10 +259,53 @@ test("banner editing has its own permitted pen control and does not open the eve
     edit.click();
     assert.deepEqual(calls, ["banner", "general"], "the visible native Edit button remains keyboard accessible");
     assert.equal(DivisionView.render(content, { editing: true, editableSections: ["general"], onBanner() {} }).querySelector(".division-banner-edit"), null);
-    assert.equal(DivisionView.render(content, { editableSections: ["appearance"], onBanner() {} }).querySelector(".division-banner-edit"), null);
+    assert.ok(DivisionView.render(content, { editableSections: ["appearance"], onBanner() {} }).querySelector(".division-banner-edit"), "appearance permission works without a global edit mode");
+    assert.equal(DivisionView.render(content, { editing: true, editableSections: [], onBanner() {} }).querySelector(".division-banner-edit"), null);
     const cleared = DivisionView.render({ ...content, appearance: { ...content.appearance, bannerColor: "", bannerImage: "" } }).querySelector(".division-event-cover");
     assert.equal(cleared.style.getPropertyValue("--division-cover-colour"), "");
     assert.equal(cleared.style.getPropertyValue("--division-cover-image"), "", "an explicitly cleared banner does not fall back to the page image");
+});
+
+test("permitted managers receive section and insertion controls without switching into an edit mode", t => {
+    const { DivisionView } = preview(t);
+    const content = { name: "Cup", sectionOrder: ["timeline"], timeline: [], participation: { teamSize: 1 } };
+    const calls = [];
+    const managed = DivisionView.render(content, {
+        editing: false, editableSections: ["timeline"],
+        onSection: key => calls.push(key), onAddSection: key => calls.push(`add:${key}`)
+    });
+    assert.ok(managed.querySelector('[data-section="timeline"] .division-section-edit'));
+    assert.equal(managed.querySelector('[data-section="general"] .division-section-edit'), null);
+    assert.equal(managed.querySelectorAll(".division-section-insert, .division-add-section").length, 2);
+    managed.querySelector('[data-section="timeline"] .division-section-edit').click();
+    managed.querySelector(".division-add-section").click();
+    assert.deepEqual(calls, ["timeline", "add:timeline"]);
+    const publicView = DivisionView.render(content, { editing: true, editableSections: [], onAddSection() {} });
+    assert.equal(publicView.querySelector(".division-section-actions, .division-section-insert, .division-add-section"), null);
+});
+
+test("poll templates render safe questions and choices and offer a separate voting mount", t => {
+    const { DivisionView } = preview(t);
+    const poll = { id: "format", title: "Which <format>?", description: "<script>not markup</script>", options: ["2 vs 2", "<img src=x>"], status: "open" };
+    const content = { name: "Cup", sectionOrder: ["polls"], polls: [poll], participation: { teamSize: 1 },
+        textStyles: { "polls.format.title": [{ start: 0, end: 5, bold: true }] } };
+    const rendered = DivisionView.render(content);
+    const card = rendered.querySelector(".division-poll");
+    assert.equal(card.dataset.pollId, "format");
+    assert.equal(card.querySelector("h3").textContent, poll.title);
+    assert.equal(card.querySelector(".division-event-copy").textContent, poll.description);
+    assert.deepEqual([...card.querySelectorAll("li")].map(node => node.textContent), poll.options);
+    assert.equal(card.querySelector("h3 span").style.fontWeight, "700");
+    assert.equal(card.querySelector("img, script, input, form"), null);
+    assert.match(card.querySelector(".division-referendum-status").textContent, /Voting open/);
+    const mounts = [];
+    const mounted = DivisionView.render(content, { onPollMount(node, entry) { mounts.push([node, entry]); node.replaceChildren(node.ownerDocument.createElement("form")); } });
+    assert.equal(mounts.length, 1);
+    assert.equal(mounts[0][1], poll);
+    assert.equal(mounts[0][0], mounted.querySelector(".division-poll-voting"));
+    assert.ok(mounted.querySelector(".division-poll-voting form"));
+    assert.ok(DivisionView.sectionOrder({ ...content, sectionOrder: undefined }).includes("polls"));
+    assert.equal(DivisionView.render({ ...content, sectionOrder: [] }).querySelector(".division-poll"), null, "a removed poll section does not display its old polls");
 });
 
 test("saved field styles appear in the overview, custom sections and roster names as safe text", t => {

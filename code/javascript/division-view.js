@@ -3,7 +3,7 @@
 (() => {
     const statusNames = { upcoming: "Upcoming", registration: "Registration", live: "Live", completed: "Completed" };
     const registrationNames = { open: "Open participation", "invite-only": "By invitation", closed: "Registration closed" };
-    const optionalSections = ["participation", "timeline", "teams", "bracket", "campaigns", "referendums"];
+    const optionalSections = ["participation", "timeline", "teams", "bracket", "campaigns", "referendums", "polls"];
 
     function sectionOrder(content = {}) {
         const custom = Array.isArray(content.customSections) ? content.customSections.slice(0, 20)
@@ -18,6 +18,7 @@
         if (content.teams?.length >= 2) order.push("bracket");
         if (content.campaigns?.length) order.push("campaigns");
         if (content.referendums?.length) order.push("referendums");
+        if (content.polls?.length) order.push("polls");
         order.push(...custom);
         if (["live", "completed"].includes(content.status) && order.includes("bracket")) {
             return ["bracket", ...order.filter(key => key !== "bracket")];
@@ -163,9 +164,10 @@
 
     function render(content = {}, options = {}) {
         const page = element("div", "division-view");
-        page.classList.toggle("division-view--editing", Boolean(options.editing));
         const allowed = options.editableSections ? new Set(options.editableSections) : null;
-        const canEdit = key => Boolean(options.editing && (!allowed || allowed.has(key.startsWith("custom:") ? "custom" : key)));
+        const managing = allowed ? allowed.size > 0 : Boolean(options.editing);
+        page.classList.toggle("division-view--editing", managing);
+        const canEdit = key => Boolean(managing && (!allowed || allowed.has(key.startsWith("custom:") ? "custom" : key)));
         const hasText = value => typeof value === "string" && value.trim().length > 0;
         const list = value => Array.isArray(value) ? value : [];
         const order = sectionOrder(content);
@@ -180,7 +182,7 @@
         }
 
         function section(key, title, hasContent = true, hero = false, titlePath = "") {
-            if (key !== "general" && !order.includes(key) || !hasContent && !options.editing) {
+            if (key !== "general" && !order.includes(key) || !hasContent && !managing) {
                 return null;
             }
             const node = element("section", `division-event-section${hero ? " division-event-hero" : ""}`);
@@ -211,7 +213,7 @@
                     const remove = element("button", "division-section-control division-section-remove", "Remove");
                     remove.type = "button";
                     remove.setAttribute("aria-label", `Remove ${title} section`);
-                    remove.title = "Remove this section from the page. Its content is kept so it can be added again.";
+                    remove.title = "Remove this section from the page and keep an archived copy.";
                     remove.addEventListener("click", () => options.onRemoveSection?.(key));
                     actions.append(remove);
                 }
@@ -236,7 +238,7 @@
         overview.append(top, formatted("h1", "division-event-title", content.name || "Untitled division", "general.name"));
         if (hasText(content.summary)) {
             overview.append(formatted("p", "division-event-summary", content.summary, "general.summary"));
-        } else if (options.editing) {
+        } else if (managing) {
             overview.append(element("p", "division-edit-prompt", "Add a short introduction to your event."));
         }
         const participation = content.participation || {};
@@ -397,18 +399,46 @@
             }
             node.append(cards);
         }
+        const polls = list(content.polls);
+        const pollSection = section("polls", "Polls", polls.length > 0);
+        if (pollSection) {
+            if (!polls.length) {
+                pollSection.append(element("p", "division-edit-prompt", "Add a question and choices for signed-in players to vote on."));
+            } else {
+                const cards = element("div", "division-information-grid");
+                for (const poll of polls) {
+                    if (!poll || typeof poll.id !== "string") continue;
+                    const card = element("article", "division-information-card division-poll");
+                    card.dataset.pollId = poll.id;
+                    card.append(element("span", "division-referendum-status", ({ planned: "Planned", open: "Voting open", closed: "Voting closed" })[poll.status] || "Planned"));
+                    const title = formatted("h3", "", poll.title || "Untitled poll", `polls.${poll.id}.title`);
+                    title.id = `division-poll-title-${poll.id}`;
+                    card.append(title);
+                    if (hasText(poll.description)) card.append(formatted("p", "division-event-copy", poll.description, `polls.${poll.id}.description`));
+                    const voting = element("div", "division-poll-voting");
+                    voting.setAttribute("aria-labelledby", title.id);
+                    const choices = element("ul", "division-referendum-options");
+                    for (const option of list(poll.options)) choices.append(element("li", "", option));
+                    voting.append(choices);
+                    card.append(voting);
+                    cards.append(card);
+                    if (typeof options.onPollMount === "function") options.onPollMount(voting, poll);
+                }
+                pollSection.append(cards);
+            }
+        }
         for (const custom of list(content.customSections).slice(0, 20)) {
             if (!custom || typeof custom.id !== "string") continue;
             const node = section(`custom:${custom.id}`, custom.title || "Untitled section", true, false, `custom.${custom.id}.title`);
             if (!node) continue;
             if (hasText(custom.description)) {
                 node.append(formatted("p", "division-event-copy", custom.description, `custom.${custom.id}.description`));
-            } else if (options.editing) {
+            } else if (managing) {
                 node.append(element("p", "division-edit-prompt", "Add the text for this section."));
             }
         }
         const visible = [sections.get("general"), ...order.map(key => sections.get(key)).filter(Boolean)];
-        const canAdd = options.editing && (canEdit("custom") || optionalSections.some(key => !order.includes(key) && canEdit(key)))
+        const canAdd = managing && (canEdit("custom") || optionalSections.some(key => canEdit(key)))
             && typeof options.onAddSection === "function";
         page.replaceChildren();
         visible.forEach((node, index) => {
