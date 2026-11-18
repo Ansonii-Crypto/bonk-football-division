@@ -44,7 +44,7 @@ function button(window, label) {
 }
 
 function field(window, labelText) {
-    const label = [...window.document.querySelectorAll(".division-inline-editor label")]
+    const label = [...window.document.querySelectorAll(".division-inline-editor .division-field-label")]
         .find(node => node.textContent.startsWith(labelText));
     assert.ok(label, `${labelText} is editable`);
     return label.querySelector("input, textarea, select");
@@ -176,7 +176,7 @@ test("switching sections keeps local edits and cancelling restores only the curr
     }, "#divisions/1");
     editSection(window);
     const description = field(window, "About this event");
-    description.closest("label").dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    description.closest(".division-field-label").dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
     assert.equal(window.document.querySelector(".division-inline-status").textContent, "", "clicking a label in the current section does not request a different editor");
     input(window, description, "Keep this description when switching");
     window.document.querySelector('[data-section="participation"] .division-section-edit').click();
@@ -976,7 +976,7 @@ test("selected text formatting stays live, survives section switching and saves 
     font.value = "serif"; font.dispatchEvent(new window.Event("change", { bubbles: true }));
     const colour = panel.querySelector('[data-format-property="color"]');
     input(window, colour, "#fe2f44");
-    const preview = description.closest("label").querySelector(".division-formatted-preview span.division-formatted-text");
+    const preview = description.closest(".division-field-label").querySelector(".division-formatted-preview span.division-formatted-text");
     assert.equal(preview.textContent, "Original");
     assert.equal(preview.style.fontWeight, "700");
     assert.match(preview.style.fontFamily, /Georgia/);
@@ -1020,12 +1020,14 @@ test("typing rebases text styles and Cancel restores formatting together with th
     assert.equal(button(window, "Save draft").disabled, true);
 });
 
-test("formatting tools stay with the active section and appear when new text fields are added", async t => {
+test("formatting tools follow the active text field and stay absent from settings or score controls", async t => {
     const model = modelFor({ ...content(), sectionOrder: ["teams", "bracket"] });
     const window = await page(t, async () => Response.json({ division: model }), "#divisions/1");
     const { document } = window;
     assert.equal(document.querySelector(".division-format-panel"), null, "the section preview has no formatting controls until its editor opens");
     editSection(window);
+    assert.equal(document.querySelector(".division-inline-formatting"), null, "no field is active before a text control is focused");
+    field(window, "Event name").focus();
     assert.equal(document.querySelectorAll(".division-inline-editor .division-inline-formatting").length, 1);
     assert.equal(document.querySelector(".division-management-tools .division-format-panel"), null);
     button(window, "Background").click();
@@ -1033,26 +1035,82 @@ test("formatting tools stay with the active section and appear when new text fie
     assert.equal(document.querySelector(".division-format-panel"), null, "background settings have no section formatting toolbar");
     button(window, "Close panel").click();
     editSection(window, "teams");
-    const toolbar = document.querySelector(".division-inline-formatting");
-    assert.equal(toolbar.hidden, true, "an empty team list has no text to format");
+    assert.equal(document.querySelector(".division-inline-formatting"), null, "an empty team list has no text to format");
     button(window, "Add team").click();
-    assert.equal(document.querySelector(".division-inline-formatting"), toolbar, "adding fields keeps the section toolbar in place");
-    assert.equal(toolbar.hidden, false);
     const teamName = field(window, "Team name");
+    teamName.focus();
+    const toolbar = document.querySelector(".division-inline-formatting");
+    assert.equal(toolbar.hidden, false, "focusing an empty input shows expanded tools without selecting text");
+    assert.equal(toolbar.closest(".division-field-label"), teamName.closest(".division-field-label"));
     input(window, teamName, "North United");
     toolbar.querySelector(".division-format-all").click();
     assert.equal(toolbar.querySelector('[data-format-property="bold"]').disabled, false);
     toolbar.querySelector('[data-format-property="bold"]').click();
-    assert.equal(teamName.closest("label").querySelector(".division-formatted-text").textContent, "North United");
+    assert.equal(teamName.closest(".division-field-label").querySelector(".division-formatted-text").textContent, "North United");
     editSection(window, "bracket");
-    assert.equal(document.querySelectorAll(".division-format-panel").length, 1);
-    assert.equal(document.querySelector(".division-inline-formatting").hidden, true, "score controls do not show text styling");
+    assert.equal(document.querySelector(".division-inline-formatting"), null, "score controls do not show text styling");
     assert.equal(toolbar.isConnected, false, "switching sections removes the old toolbar");
     document.querySelector(".division-inline-cancel").click();
     assert.equal(document.querySelector(".division-format-panel"), null);
     for (const label of ["Save draft", "Background", "Banner", "Management roles", "Undo", "Redo"]) {
         assert.ok(button(window, label).closest(".division-management-tools"), `${label} remains in the global tools`);
     }
+});
+
+test("one collapsible toolbar follows field focus and resets expanded for the next section", async t => {
+    const model = modelFor({ ...content(), sectionOrder: ["participation"] });
+    const window = await page(t, async () => Response.json({ division: model }), "#divisions/1");
+    const { document } = window;
+    editSection(window);
+    const name = field(window, "Event name");
+    const description = field(window, "About this event");
+    name.focus();
+    const toolbar = document.querySelector(".division-field-formatting");
+    assert.ok(toolbar);
+    assert.equal(toolbar.closest(".division-field-label"), name.closest(".division-field-label"));
+    assert.equal(toolbar.querySelector(".division-format-options").hidden, false);
+    const collapse = toolbar.querySelector(".division-format-collapse");
+    assert.equal(collapse.disabled, false, "minimise does not require a selected range");
+    collapse.click();
+    assert.equal(collapse.getAttribute("aria-expanded"), "false");
+    assert.equal(toolbar.querySelector(".division-format-options").hidden, true);
+    description.focus();
+    assert.equal(document.querySelectorAll(".division-field-formatting").length, 1);
+    assert.equal(toolbar.closest(".division-field-label"), description.closest(".division-field-label"));
+    assert.equal(toolbar.querySelector(".division-format-options").hidden, true, "switching fields keeps the current section's collapsed preference");
+    editSection(window, "participation");
+    field(window, "Participation details").focus();
+    const nextToolbar = document.querySelector(".division-field-formatting");
+    assert.notEqual(nextToolbar, toolbar);
+    assert.equal(nextToolbar.querySelector(".division-format-options").hidden, false);
+});
+
+test("colour changes keep the active range visible without replacing its field or picker", async t => {
+    const model = modelFor(content());
+    const window = await page(t, async () => Response.json({ division: model }), "#divisions/1");
+    const { document } = window;
+    editSection(window);
+    const description = field(window, "About this event");
+    description.focus(); description.setSelectionRange(0, 8);
+    description.dispatchEvent(new window.Event("select", { bubbles: true }));
+    const toolbar = document.querySelector(".division-field-formatting");
+    const colour = toolbar.querySelector('[data-format-property="color"]');
+    colour.focus();
+    const wrapper = description.closest(".division-field-label");
+    const mirror = wrapper.querySelector(".division-field-selection");
+    assert.equal(mirror.hidden, false, "a safe mirror shows the native selection while the colour tool has focus");
+    assert.equal(mirror.getAttribute("aria-hidden"), "true");
+    assert.equal(mirror.querySelector("mark").textContent, "Original");
+    for (const colourValue of ["#ff9b70", "#78d9ff", "#fe2f44"]) input(window, colour, colourValue);
+    assert.equal(field(window, "About this event"), description);
+    assert.equal(toolbar.querySelector('[data-format-property="color"]'), colour);
+    assert.deepEqual([description.selectionStart, description.selectionEnd], [0, 8]);
+    assert.equal(mirror.hidden, false);
+    assert.equal(mirror.querySelector("mark").textContent, "Original");
+    assert.equal(wrapper.querySelector(".division-formatted-text").style.color, "rgb(254, 47, 68)");
+    const nextField = field(window, "Short introduction"); nextField.focus();
+    assert.equal(mirror.hidden, true);
+    assert.equal(toolbar.closest(".division-field-label"), nextField.closest(".division-field-label"));
 });
 
 test("fresh templates stay separate from saved archives and managers can restore or delete archived sections", async t => {
@@ -1099,7 +1157,7 @@ test("fresh templates stay separate from saved archives and managers can restore
     const original = [...document.querySelectorAll(".division-archive-card")].find(card => card.querySelector("strong").textContent === "Original fixtures");
     original.querySelector('[data-restore-archive]').click();
     assert.equal(field(window, "Title").value, "Original fixtures");
-    assert.equal(field(window, "Title").closest("label").querySelector(".division-formatted-text").textContent, "Original");
+    assert.equal(field(window, "Title").closest(".division-field-label").querySelector(".division-formatted-text").textContent, "Original");
     document.querySelector(".division-inline-cancel").click();
     assert.equal(document.querySelector('[data-section="timeline"]'), null, "Cancel keeps the removed timeline out of the page");
     document.querySelector(".division-add-section").click();

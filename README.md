@@ -12,11 +12,13 @@ code/
     html/index.html           Page structure
     css/main.css              Shared theme and navigation
     css/pages.css             Page layouts
+    css/controls.css          Shared styled dropdown menus
     css/account.css           Account form and navigation dropdown
     css/admin.css             Assessment management interface
     css/division-view.css     Event pages, timelines and brackets
     css/divisions.css         Division list and editor
     javascript/main.js        Navigation and routing
+    javascript/controls.js    Dropdown interaction and field captions
     javascript/assessments.js  Assessment browsing and profiles
     javascript/classes.js     Seven playstyle class guides
     javascript/divisions.js   Division directory and live event editor
@@ -130,7 +132,7 @@ Removing a completed section keeps a private archived copy and removes it from t
 
 Open **Background** to change the page backdrop, or **Banner** to change the event cover and division card. Hovering over the banner also reveals a translucent overlay with a pen button for people with permission to change it. Each settings panel accepts a colour or direct HTTPS image URL and previews changes immediately. Use **Close panel**, Escape, a click outside the panel, or another section to close it while keeping changes locally. **Cancel** reverts that panel's changes; **Save settings** or **Save draft** stores them privately. Each reset button restores only its own default appearance. Changes reach the public event and card after publishing.
 
-While editing supported text fields, select a phrase in the input or use **Select whole field**. The section's **Text style** toolbar applies bold, italic, underline, font, size or colour to that selection; **Clear formatting** removes its styles. A formatted preview appears below the field. Formatting follows text edits and is saved with the draft as validated text ranges rather than HTML. The same section permissions apply to text styling as to its content.
+Click a supported text field to show its formatting toolbar immediately beneath that field. The toolbar stays with the active field until another text field is selected or the section editor closes. Select a phrase or use **All** to format the whole field; the square controls apply bold, italic, underline or clear formatting, alongside font, size and colour. The selection stays highlighted while using those controls. **Minimise formatting** hides the options; each section starts expanded. A formatted preview appears below the field. Formatting follows text edits and is saved with the draft as validated text ranges rather than HTML. The same section permissions apply to text styling as to its content.
 
 The management tools include **Undo** and **Redo** for the last 30 section edits, formatting and layout/appearance changes in this open event. Undoing a saved change creates an unsaved reversal; it does not write to the server or change the published page. Reloading the saved draft clears this local history. **Copy event link** copies its page URL with a selectable fallback when clipboard access is unavailable. Sharing a private draft's URL does not grant access to it.
 
@@ -143,7 +145,7 @@ A vertical section rail sits in the right gutter for readers and managers. Each 
 | Organizer | Event information, timeline, participation, teams, bracket, campaigns, referendums and polls | Draft only | None |
 | Editor | Background, banner, description, text sections, campaigns, referendums and polls | Draft only | None |
 
-Roles are scoped to one division and checked by the Worker on every management request. Assign a role using the person's **Bonk player ID** after they have signed in to this site. A division role grants no assessment or site administrator privileges.
+Roles are scoped to one division and checked by the Worker on every management request. Assign a role using the person's **Bonk username**, **Bonk player ID**, or a matching pair after they have signed in to this site. Name lookups use exact verified account names, preserving spaces; ambiguous names require an ID, and mismatched details are rejected. A division role grants no assessment or site administrator privileges.
 
 The template includes a branched date timeline, participation settings from 1v1 to 4v4, rosters, and a single elimination bracket for up to 16 entrants. Byes advance automatically; entered scores advance the winner, while a tie waits for a result. Scores are tied to their participants so an earlier result change cannot silently reuse a later match's old score. Campaign and referendum sections display event information and proposals; signup submissions are not implemented. Use a **Polls** section for live voting.
 

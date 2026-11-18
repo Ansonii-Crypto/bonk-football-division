@@ -582,9 +582,51 @@ export async function handleDivisionRequest(request, env, url, account, readJson
             return json({ error: "Only a division director or site administrator can manage roles." }, 403);
         }
         const body = request.method === "POST" ? await readJson(request) : null;
-        const bonkId = positiveBonkId(request.method === "DELETE" ? parts[6] : body?.bonkId);
-        if (!bonkId) {
-            return json({ error: "Enter a valid Bonk player ID." }, 400);
+        let bonkId;
+        if (request.method === "DELETE") {
+            bonkId = positiveBonkId(parts[6]);
+            if (!bonkId) return json({ error: "Enter a valid Bonk player ID." }, 400);
+        } else {
+            if (!object(body)) return json({ error: "Enter a Bonk username or player ID." }, 400);
+            if (!rights.assignRoles.includes(body.role)) {
+                return json({ error: "Choose a role you are allowed to assign." }, 403);
+            }
+            const hasId = body.bonkId !== undefined && body.bonkId !== null && body.bonkId !== "";
+            const hasName = body.username !== undefined && body.username !== null && body.username !== "";
+            const hasAccount = body.account !== undefined && body.account !== null && body.account !== "";
+            if (hasAccount && (hasId || hasName) || !hasId && !hasName && !hasAccount
+                || hasName && !text(body.username, 100, true) || hasAccount && !text(body.account, 100, true)) {
+                return json({ error: "Enter a Bonk username or player ID. Use the separate name and ID fields together only when they identify the same account." }, 400);
+            }
+            let target;
+            if (hasId) {
+                bonkId = positiveBonkId(body.bonkId);
+                if (!bonkId) return json({ error: "Enter a valid Bonk player ID." }, 400);
+                target = await env.DB.prepare("SELECT bonk_id, username FROM bonk_users WHERE bonk_id = ?").bind(bonkId).first();
+                if (target && hasName && target.username.toLowerCase() !== body.username.toLowerCase()) {
+                    return json({ error: "The Bonk username and player ID do not match. Check the account details before assigning a role." }, 400);
+                }
+            } else {
+                // Resolve only identities verified by a prior sign-in. Keep significant
+                // username spaces and use equality, never a partial-name match.
+                const name = hasName ? body.username : body.account;
+                const matches = await env.DB.prepare("SELECT bonk_id, username FROM bonk_users WHERE username = ? COLLATE NOCASE LIMIT 2")
+                    .bind(name).all();
+                const candidates = new Map(matches.results.map(user => [user.bonk_id, user]));
+                const numericId = hasAccount ? positiveBonkId(name) : null;
+                if (numericId) {
+                    const byId = await env.DB.prepare("SELECT bonk_id, username FROM bonk_users WHERE bonk_id = ?").bind(numericId).first();
+                    if (byId) candidates.set(byId.bonk_id, byId);
+                }
+                if (candidates.size > 1) {
+                    return json({ error: "More than one account matches. Enter the Bonk player ID in the player ID field to choose the account explicitly." }, 409);
+                }
+                target = candidates.values().next().value;
+                bonkId = target?.bonk_id;
+            }
+            if (!target) {
+                return json({ error: "That Bonk account must sign in to this site before receiving a role. Check the username or player ID." }, 400);
+            }
         }
         const existing = await env.DB.prepare("SELECT role FROM division_members WHERE division_id = ? AND bonk_id = ?").bind(id, bonkId).first();
         if (role !== "site-admin" && existing?.role === "director") {
@@ -601,13 +643,6 @@ export async function handleDivisionRequest(request, env, url, account, readJson
                 return json({ error: "This role changed. Reload the management list before changing it." }, role === "site-admin" ? 404 : 403);
             }
         } else {
-            if (!rights.assignRoles.includes(body?.role)) {
-                return json({ error: "Choose a role you are allowed to assign." }, 403);
-            }
-            const target = await env.DB.prepare("SELECT bonk_id FROM bonk_users WHERE bonk_id = ?").bind(bonkId).first();
-            if (!target) {
-                return json({ error: "That Bonk account must sign in to this site before receiving a role." }, 400);
-            }
             const assigned = await env.DB.prepare(`INSERT INTO division_members (division_id, bonk_id, role, assigned_by_bonk_id, updated_at)
                 VALUES (?, ?, ?, ?, ?) ON CONFLICT(division_id, bonk_id) DO UPDATE SET
                 role = excluded.role, assigned_by_bonk_id = excluded.assigned_by_bonk_id, updated_at = excluded.updated_at

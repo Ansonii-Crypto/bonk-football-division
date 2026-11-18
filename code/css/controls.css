@@ -1,0 +1,165 @@
+.bfd-select {
+    position: relative;
+    display: block;
+    min-width: 0;
+    width: 100%;
+}
+
+.bfd-select[hidden],
+.bfd-select-list[hidden] {
+    display: none !important;
+}
+
+.bfd-select-source {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    clip-path: inset(50%) !important;
+    pointer-events: none !important;
+}
+
+button.bfd-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+    width: 100%;
+    min-width: 0;
+    min-height: 2.7rem;
+    padding: 0.65rem 0.75rem;
+    color: #e3eff8;
+    background: #0d1926;
+    border: 1px solid #4a6377;
+    border-radius: 0.5rem;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+}
+
+.bfd-select-trigger::after {
+    content: "";
+    flex: 0 0 0.45rem;
+    width: 0.45rem;
+    height: 0.45rem;
+    margin: -0.2rem 0.15rem 0 0.35rem;
+    border-right: 1.5px solid #a9c9dc;
+    border-bottom: 1.5px solid #a9c9dc;
+    transform: rotate(45deg);
+}
+
+.bfd-select-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+button.bfd-select-trigger:hover:not(:disabled),
+button.bfd-select-trigger[aria-expanded="true"] {
+    background: #142b3e;
+    border-color: #7b9caf;
+}
+
+button.bfd-select-trigger:focus {
+    outline: none;
+}
+
+button.bfd-select-trigger:focus-visible {
+    outline: 2px solid #a9c9dc;
+    outline-offset: 2px;
+}
+
+button.bfd-select-trigger:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.bfd-select-list {
+    position: fixed;
+    z-index: 100;
+    display: grid;
+    align-content: start;
+    gap: 0.2rem;
+    inset: auto;
+    width: 16rem;
+    max-width: calc(100vw - 1rem);
+    max-height: 20rem;
+    margin: 0;
+    padding: 0.4rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    color: #e3eff8;
+    background: #102131;
+    border: 1px solid #4a6377;
+    border-radius: 0.5rem;
+    box-shadow: 0 14px 35px rgb(0 0 0 / 35%);
+    font: 400 0.85rem/1.4 "Segoe UI", system-ui, sans-serif;
+    scrollbar-width: thin;
+    scrollbar-color: #567286 transparent;
+}
+
+.bfd-select-option {
+    position: relative;
+    min-width: 0;
+    padding: 0.65rem 2rem 0.65rem 0.7rem;
+    border: 1px solid transparent;
+    border-radius: 0.3rem;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
+.bfd-select-option.is-active,
+.bfd-select-option:hover:not([aria-disabled="true"]) {
+    color: #eff8ff;
+    background: #213e52;
+    border-color: #496a81;
+}
+
+.bfd-select-option[aria-selected="true"] {
+    color: #c4efff;
+    background: #1a374b;
+}
+
+.bfd-select-option[aria-selected="true"]::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 0.75rem;
+    width: 0.4rem;
+    height: 0.65rem;
+    margin-top: -0.4rem;
+    border-right: 2px solid #a9e6ff;
+    border-bottom: 2px solid #a9e6ff;
+    transform: rotate(45deg);
+}
+
+.bfd-select-option[aria-disabled="true"] {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.bfd-select-group {
+    padding: 0.6rem 0.7rem 0.25rem;
+    color: #9db8ca;
+    font-size: 0.7rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+}
+
+@media (pointer: coarse) {
+    button.bfd-select-trigger,
+    .bfd-select-option {
+        min-height: 2.75rem;
+        font-size: 1rem;
+    }
+}

@@ -697,64 +697,90 @@ textarea.division-field {
 
 .division-format-panel {
     display: flex;
-    align-items: flex-end;
-    flex-wrap: wrap;
-    gap: 0.65rem 0.75rem;
+    flex-direction: column;
+    gap: 0.35rem;
     min-width: 0;
-    padding: 0.9rem;
-    background: #102638;
-    border: 1px solid #3f6077;
-    border-radius: 0.65rem;
+    padding: 0.35rem 0.45rem;
+    background: #102334;
+    border: 1px solid #3b5a70;
+    border-radius: 0.45rem;
 }
 
 .division-format-panel[hidden] {
     display: none;
 }
 
-.division-format-panel h2 {
-    flex: 0 0 100%;
-    margin: 0;
-    color: #d7eaf6;
-    font-size: 0.88rem;
-    font-weight: 650;
+.division-format-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
 }
 
 .division-format-selection {
-    flex: 0 0 100%;
+    flex: 1;
     margin: 0;
     color: #abc4d5;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     line-height: 1.5;
     overflow-wrap: anywhere;
 }
 
+.division-format-heading .division-format-collapse {
+    display: grid;
+    place-items: center;
+    flex: 0 0 1.75rem;
+    width: 1.75rem;
+    min-height: 1.75rem;
+    padding: 0;
+    color: #bbd9eb;
+    background: transparent;
+    border-color: #3b5a70;
+    border-radius: 0.3rem;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.division-format-options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.division-format-options[hidden],
+.division-field-format-slot:empty {
+    display: none;
+}
+
 .division-inline-formatting .division-format-all,
 .division-inline-formatting .division-format-reset {
-    flex: 0 0 auto;
-    width: auto;
-    min-height: 2.5rem;
-    padding: 0.5rem 0.65rem;
-    font-size: 0.74rem;
+    flex: 0 0 2rem;
+    width: 2rem;
+    min-height: 2rem;
+    padding: 0.2rem;
+    font-size: 0.72rem;
     white-space: nowrap;
 }
 
 .division-inline-formatting .division-format-reset {
-    margin-left: auto;
+    margin-left: 0;
 }
 
 .division-format-toolbar {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.25rem;
     min-width: 0;
 }
 
 .division-format-toolbar .division-format-toggle {
-    flex: 0 0 2.5rem;
-    width: 2.5rem;
-    min-height: 2.5rem;
-    padding: 0.4rem;
+    flex: 0 0 2rem;
+    width: 2rem;
+    min-height: 2rem;
+    padding: 0.2rem;
     color: #cfe4f1;
     background: #0d1d2b;
     border-color: #3e5a70;
@@ -769,39 +795,62 @@ textarea.division-field {
 
 .division-format-fields {
     display: grid;
-    flex: 1 1 22rem;
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(3.5rem, 0.6fr);
+    flex: 0 1 15rem;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 2rem;
     align-items: end;
-    gap: 0.5rem;
+    gap: 0.35rem;
     min-width: 0;
     max-width: 100%;
 }
 
 .division-inline-formatting .division-format-fields .division-field-label {
     display: grid;
-    gap: 0.35rem;
+    gap: 0;
     min-width: 0;
     color: #b7cede;
     font-size: 0.72rem;
 }
 
+.division-inline-formatting .division-format-fields .division-field-caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
 .division-inline-formatting .division-format-fields .division-field {
-    min-height: 2.5rem;
-    padding: 0.4rem 0.5rem;
+    min-height: 2rem;
+    padding: 0.25rem 0.4rem;
     background: #0d1d2b;
     border-color: #3e5a70;
     font-size: 0.74rem;
 }
 
+.division-field-formatting button.bfd-select-trigger {
+    gap: 0.25rem;
+    min-height: 2rem;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.74rem;
+}
+
+.division-field-formatting button.bfd-select-trigger::after {
+    flex-basis: 0.35rem;
+    width: 0.35rem;
+    height: 0.35rem;
+    margin: -0.15rem 0.1rem 0;
+}
+
 .division-format-fields input[type="color"] {
     width: 100%;
-    height: 2.5rem;
+    height: 2rem;
     padding: 0.2rem;
 }
 
 .division-format-panel .division-format-reset {
-    min-height: 2.5rem;
-    padding: 0.5rem 0.65rem;
+    min-height: 2rem;
+    padding: 0.2rem;
     color: #b0c7d7;
     background: transparent;
     border-color: #3b546a;
@@ -830,6 +879,46 @@ textarea.division-field {
 
 .division-format-feedback:empty {
     display: none;
+}
+
+.division-input-surface {
+    position: relative;
+    min-width: 0;
+}
+
+.division-input-surface > .division-field {
+    display: block;
+    width: 100%;
+    margin: 0;
+}
+
+.division-field-selection {
+    position: absolute;
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+}
+
+.division-field-selection[hidden] {
+    display: none;
+}
+
+.division-field-selection-copy {
+    box-sizing: border-box;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+}
+
+.division-selection-highlight {
+    margin: 0;
+    padding: 0;
+    color: #091b29;
+    background: #8bd3f3;
+    font: inherit;
+    text-decoration: none;
+    border-radius: 0;
 }
 
 .division-formatted-preview {
@@ -1558,13 +1647,13 @@ textarea.division-field {
     }
 
     .division-inline-formatting {
-        gap: 0.65rem;
-        padding: 0.75rem;
+        gap: 0.35rem;
+        padding: 0.35rem;
     }
 
     .division-inline-formatting .division-format-fields {
-        flex-basis: 100%;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        flex-basis: 14rem;
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 2rem;
     }
 }
 
@@ -1587,6 +1676,33 @@ textarea.division-field {
 
     .division-inline-formatting .division-format-fields .division-field:not([type="color"]) {
         font-size: 1rem;
+    }
+
+    .division-format-toolbar .division-format-toggle,
+    .division-inline-formatting .division-format-all,
+    .division-inline-formatting .division-format-reset {
+        flex-basis: 2.75rem;
+        width: 2.75rem;
+    }
+
+    .division-field-formatting .division-format-fields {
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 2.75rem;
+    }
+
+    .division-field-formatting button.bfd-select-trigger {
+        min-height: 2.75rem;
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 22rem) {
+    .division-field-formatting .division-format-fields {
+        flex-basis: 100%;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    }
+
+    .division-field-formatting .division-format-fields > .division-field-label:last-child {
+        width: 2.75rem;
     }
 }
 

@@ -330,6 +330,7 @@
         let textSelection = null;
         let formatPanel = null;
         let formatFeedback = "";
+        let formattingExpanded = true;
         let pollData = null;
         let pollError = "";
         let pollLoading = false;
@@ -373,7 +374,7 @@
             activeEditor = null;
             backgroundEvents?.abort();
             selected = "";
-            textSelection = null; fieldBindings.clear(); formatFeedback = "";
+            textSelection = null; clearFieldBindings(); formatFeedback = "";
             dirty = !sameContent(draft, model.content);
             if (!dirty) message = "Preview matches the saved draft";
             return true;
@@ -513,6 +514,7 @@
             if (!preview) return;
             scrollRestoreRevision += 1;
             formatPanel = null;
+            clearFieldBindings();
             applyBackground(backdrop, draft.appearance);
             section.classList.toggle("division-custom-background", !backdrop.hidden);
             preview.replaceChildren(window.DivisionView.render(draft, {
@@ -581,6 +583,7 @@
         }
         function beginSection(key, before = snapshot(), position = null, insertedAfter = null) {
             if (!editable(key) || activeEditor || pending) return;
+            formattingExpanded = true;
             selected = key;
             pickerOpen = false;
             toolMode = "";
@@ -613,8 +616,7 @@
             if (settingsEditorOpen()) form.append(element("p", "division-background-hint", "Changes preview immediately. Close to keep them in your draft, or Cancel to revert."));
             if (!settingsEditorOpen()) {
                 formatPanel = renderFormattingPanel();
-                formatPanel.classList.add("division-inline-formatting");
-                form.append(formatPanel);
+                formatPanel.classList.add("division-inline-formatting", "division-field-formatting");
             }
             editorFields = element("fieldset", "division-inline-fields");
             form.append(editorFields);
@@ -933,14 +935,27 @@
         function renderFormattingPanel() {
             const panel = element("section", "division-format-panel");
             panel.setAttribute("aria-label", "Text style");
-            panel.append(element("h2", "", "Text style"), element("p", "division-format-selection", "Select text in a field to format it."));
+            const heading = element("div", "division-format-heading");
+            const selection = element("p", "division-format-selection", "Text formatting");
+            const collapse = button("−", () => {
+                formattingExpanded = !formattingExpanded;
+                updateFormattingPanel();
+            }, "division-format-collapse");
+            const options = element("div", "division-format-options");
+            options.id = `division-format-options-${id()}`;
+            collapse.setAttribute("aria-controls", options.id);
+            heading.append(selection, collapse);
+            panel.append(heading, options);
             const all = button("Select whole field", () => {
                 const binding = fieldBindings.get(textSelection?.path);
                 if (!binding) return;
                 binding.control.setSelectionRange(0, binding.control.value.length);
                 selectTextField(binding);
             }, "division-format-all");
-            panel.append(all);
+            all.textContent = "All";
+            all.setAttribute("aria-label", "Select whole field"); all.title = "Select whole field";
+            all.addEventListener("pointerdown", event => event.preventDefault());
+            options.append(all);
             const toolbar = element("div", "division-format-toolbar");
             toolbar.setAttribute("role", "group"); toolbar.setAttribute("aria-label", "Text emphasis");
             for (const [property, label, title] of [["bold", "B", "Bold"], ["italic", "I", "Italic"], ["underline", "U", "Underline"]]) {
@@ -950,7 +965,7 @@
                 toggle.addEventListener("pointerdown", event => event.preventDefault());
                 toolbar.append(toggle);
             }
-            panel.append(toolbar);
+            options.append(toolbar);
             const fields = element("div", "division-format-fields");
             const font = inputField(fields, "Font", "default", value => applyTextStyle({ font: value }), {
                 options: [["default", "Default"], ["sans", "Sans serif"], ["serif", "Serif"], ["mono", "Monospace"]], noChange: true
@@ -962,10 +977,50 @@
             size.dataset.formatProperty = "size";
             const colour = inputField(fields, "Text colour", "#e2eff7", value => applyTextStyle({ color: value }), { type: "color", noChange: true });
             colour.dataset.formatProperty = "color";
-            panel.append(fields, button("Clear formatting", () => applyTextStyle({ bold: null, italic: null, underline: null, color: null, font: null, size: null }), "division-format-reset"));
+            const reset = button("Tx", () => applyTextStyle({ bold: null, italic: null, underline: null, color: null, font: null, size: null }), "division-format-reset");
+            reset.title = "Clear formatting"; reset.setAttribute("aria-label", "Clear formatting");
+            reset.addEventListener("pointerdown", event => event.preventDefault());
+            options.append(fields, reset);
             const feedback = element("p", "division-format-feedback"); feedback.setAttribute("role", "status");
             panel.append(feedback);
             return panel;
+        }
+
+        function clearFieldBindings() {
+            for (const binding of fieldBindings.values()) binding.observer?.disconnect();
+            fieldBindings.clear();
+        }
+
+        function updateSelectionMirror(binding) {
+            const active = binding.path === textSelection?.path;
+            const selectedRange = active && textSelection.start < textSelection.end;
+            const show = selectedRange && binding.control.isConnected && document.activeElement !== binding.control;
+            binding.mirror.hidden = !show;
+            if (!show) return;
+            const control = binding.control;
+            const computed = window.getComputedStyle(control);
+            const mirror = binding.mirror;
+            const copy = binding.selectionCopy;
+            mirror.style.left = computed.borderLeftWidth;
+            mirror.style.top = computed.borderTopWidth;
+            mirror.style.width = `${control.clientWidth}px`;
+            mirror.style.height = `${control.clientHeight}px`;
+            mirror.style.borderRadius = computed.borderRadius;
+            mirror.style.background = computed.backgroundColor;
+            mirror.style.color = computed.color;
+            for (const property of ["font", "fontFamily", "fontSize", "fontWeight", "fontStyle", "fontVariant", "fontStretch", "letterSpacing", "textTransform", "textIndent", "textAlign", "direction", "wordSpacing", "tabSize"]) copy.style[property] = computed[property];
+            copy.style.padding = computed.padding;
+            copy.style.lineHeight = control.tagName === "TEXTAREA" ? computed.lineHeight : `${control.clientHeight}px`;
+            if (control.tagName !== "TEXTAREA") { copy.style.paddingTop = "0"; copy.style.paddingBottom = "0"; }
+            copy.style.whiteSpace = control.tagName === "TEXTAREA" ? "pre-wrap" : "pre";
+            copy.style.overflowWrap = control.tagName === "TEXTAREA" ? "break-word" : "normal";
+            copy.style.width = `${control.clientWidth}px`;
+            copy.style.height = `${control.clientHeight}px`;
+            const mark = element("mark", "division-selection-highlight", control.value.slice(textSelection.start, textSelection.end));
+            copy.replaceChildren(document.createTextNode(control.value.slice(0, textSelection.start)), mark,
+                document.createTextNode(control.value.slice(textSelection.end) + (control.tagName === "TEXTAREA" ? "\u200b" : "")));
+            copy.scrollTop = control.scrollTop;
+            copy.scrollLeft = control.scrollLeft;
         }
 
         function selectTextField(binding) {
@@ -993,15 +1048,24 @@
 
         function updateFormattingPanel() {
             if (!formatPanel) return;
-            formatPanel.hidden = !inlineEditorOpen() || !fieldBindings.size;
             const binding = fieldBindings.get(textSelection?.path);
-            const hasField = Boolean(binding?.control.isConnected && binding.control.value.length);
-            const hasRange = hasField && textSelection.start < textSelection.end;
+            const hasField = Boolean(binding?.control.isConnected);
+            const hasText = hasField && binding.control.value.length > 0;
+            const hasRange = hasText && textSelection.start < textSelection.end;
+            formatPanel.hidden = !inlineEditorOpen() || !hasField;
+            if (hasField && formatPanel.parentElement !== binding.slot) binding.slot.append(formatPanel);
             const selection = formatPanel.querySelector(".division-format-selection");
             selection.textContent = hasRange ? `${binding.label} · ${textSelection.end - textSelection.start} characters selected`
-                : hasField ? `${binding.label} · select some text or the whole field` : "Select text in a field to format it.";
-            for (const control of formatPanel.querySelectorAll("button, input, select")) {
-                control.disabled = pending || (control.classList.contains("division-format-all") ? !hasField : !hasRange);
+                : hasField ? `${binding.label} · select text to format` : "Text formatting";
+            const collapse = formatPanel.querySelector(".division-format-collapse");
+            collapse.disabled = pending;
+            collapse.textContent = formattingExpanded ? "−" : "+";
+            collapse.title = formattingExpanded ? "Minimise formatting" : "Show formatting";
+            collapse.setAttribute("aria-label", collapse.title);
+            collapse.setAttribute("aria-expanded", String(formattingExpanded));
+            formatPanel.querySelector(".division-format-options").hidden = !formattingExpanded;
+            for (const control of formatPanel.querySelectorAll(".division-format-options button, .division-format-options input, .division-format-options select")) {
+                control.disabled = pending || (control.classList.contains("division-format-all") ? !hasText : !hasRange);
             }
             for (const toggle of formatPanel.querySelectorAll(".division-format-toggle")) toggle.setAttribute("aria-pressed", String(selectedStyle(toggle.dataset.formatProperty) === true));
             formatPanel.querySelector('[data-format-property="font"]').value = selectedStyle("font") || "default";
@@ -1012,6 +1076,7 @@
                 const runs = draft.textStyles?.[field.path] || [];
                 field.preview.hidden = !runs.length && !(hasRange && textSelection.path === field.path);
                 window.DivisionText?.render(field.copy, field.control.value, runs);
+                updateSelectionMirror(field);
             }
         }
 
@@ -1174,7 +1239,10 @@
         }
 
         function inputField(parent, label, value, onInput, options = {}) {
-            const wrapper = element("label", "division-field-label", label);
+            const wrapper = element("div", "division-field-label");
+            const caption = element("span", "division-field-caption", label);
+            caption.id = `division-field-caption-${id()}`;
+            wrapper.append(caption);
             let control;
             if (options.options) {
                 control = element("select", "division-field");
@@ -1187,6 +1255,7 @@
             if (options.maxLength) control.maxLength = options.maxLength;
             if (options.min !== undefined) control.min = options.min;
             if (options.max !== undefined) control.max = options.max;
+            control.setAttribute("aria-labelledby", caption.id);
             control.value = value ?? ""; control.disabled = Boolean(options.disabled);
             let previousText = String(value ?? "");
             control.addEventListener(options.options || options.type === "number" ? "change" : "input", () => {
@@ -1201,23 +1270,39 @@
                 }
                 if (!options.noChange) change();
             });
-            wrapper.append(control); parent.append(wrapper);
+            if (!options.formatPath || !window.DivisionText) wrapper.append(control);
+            parent.append(wrapper);
             if (options.formatPath && window.DivisionText) {
                 control.dataset.formatPath = options.formatPath;
+                const surface = element("div", "division-input-surface");
+                const mirror = element("div", "division-field-selection");
+                mirror.hidden = true;
+                mirror.setAttribute("aria-hidden", "true");
+                const selectionCopy = element("div", "division-field-selection-copy");
+                mirror.append(selectionCopy);
+                surface.append(control, mirror);
+                const slot = element("div", "division-field-format-slot");
                 const preview = element("div", "division-formatted-preview");
                 preview.hidden = true;
                 const copy = element("div", "division-formatted-preview-copy");
                 preview.append(element("span", "division-formatted-preview-label", "Formatted preview"), copy);
-                wrapper.append(preview);
-                const binding = { path: options.formatPath, label, control, preview, copy };
+                wrapper.append(surface, slot, preview);
+                const binding = { path: options.formatPath, label, control, preview, copy, slot, mirror, selectionCopy };
                 fieldBindings.set(options.formatPath, binding);
                 for (const event of ["select", "keyup", "mouseup", "focus"]) control.addEventListener(event, () => selectTextField(binding));
+                control.addEventListener("blur", () => updateSelectionMirror(binding));
+                control.addEventListener("scroll", () => updateSelectionMirror(binding), { passive: true });
+                if (typeof window.ResizeObserver === "function") {
+                    binding.observer = new window.ResizeObserver(() => updateSelectionMirror(binding));
+                    binding.observer.observe(control);
+                }
+                if (textSelection?.path === binding.path) control.setSelectionRange(Math.min(textSelection.start, control.value.length), Math.min(textSelection.end, control.value.length));
             }
             return control;
         }
         function paintInspector() {
             if (!editorFields || !activeEditor) return;
-            fieldBindings.clear();
+            clearFieldBindings();
             editorFields.replaceChildren();
             const body = editorFields;
             if (selected === "general") editGeneral(body);
@@ -1520,7 +1605,7 @@
             body.append(button("Clear all scores", () => { draft.results = {}; change(); paintInspector(); }, "division-button--danger"));
         }
         function editMembers(body) {
-            body.append(element("p", "division-editor-note", "Directors publish and manage lower roles. Organisers edit the event and competition. Editors maintain descriptions, campaigns and referendums. Accounts must sign in to this site before they can be assigned."));
+            body.append(element("p", "division-editor-note", "Directors publish and manage lower roles. Organisers edit the event and competition. Editors maintain descriptions, campaigns, referendums and polls. Accounts must sign in to this site before they can be assigned."));
             const list = element("div", "division-member-list"); body.append(list);
             const memberStatus = element("p", "division-message"); memberStatus.setAttribute("role", "status");
             function showMembers() {
@@ -1542,13 +1627,20 @@
                 void request(`/api/manage/divisions/${divisionId}/members`).then(data => { members = data.members; if (list.isConnected) showMembers(); })
                     .catch(error => { if (list.isConnected) list.replaceChildren(element("p", "division-error", error.message)); });
             }
-            const form = element("form", "division-member-form"); let bonkId = ""; let role = model.permissions.assignRoles[0];
+            const form = element("form", "division-member-form"); let bonkId = ""; let username = ""; let role = model.permissions.assignRoles[0];
+            form.append(element("p", "division-editor-note", "Enter either a Bonk username or a player ID. If you enter both, they must identify the same account."));
+            inputField(form, "Bonk username", "", value => { username = value; }, { maxLength: 100, noChange: true });
             inputField(form, "Bonk player ID", "", value => { bonkId = value; }, { maxLength: 16, noChange: true });
             inputField(form, "Management role", role, value => { role = value; }, { options: model.permissions.assignRoles.map(key => [key, roleNames[key]]), noChange: true });
             const submit = element("button", "division-button division-button--primary", "Assign role"); submit.type = "submit"; form.append(submit);
             form.addEventListener("submit", async event => {
-                event.preventDefault(); submit.disabled = true; memberStatus.textContent = "Assigning role…";
-                try { const data = await request(`/api/manage/divisions/${divisionId}/members`, "POST", { bonkId, role }); members = data.members; if (!section.isConnected) return; showMembers(); memberStatus.textContent = "Role assigned"; }
+                event.preventDefault();
+                if (submit.disabled) return;
+                if (!username.trim() && !bonkId.trim()) { memberStatus.textContent = "Enter a Bonk username or player ID."; return; }
+                if (!form.reportValidity()) return;
+                submit.disabled = true; memberStatus.textContent = "Assigning role…";
+                const identity = { ...(username.trim() ? { username } : {}), ...(bonkId.trim() ? { bonkId: bonkId.trim() } : {}), role };
+                try { const data = await request(`/api/manage/divisions/${divisionId}/members`, "POST", identity); members = data.members; if (!section.isConnected) return; showMembers(); memberStatus.textContent = "Role assigned"; }
                 catch (error) { memberStatus.textContent = error.message; }
                 finally { submit.disabled = false; }
             });
