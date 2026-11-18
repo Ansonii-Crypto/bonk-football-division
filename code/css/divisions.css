@@ -1686,6 +1686,8 @@ textarea.division-field {
     }
 
     .division-field-formatting .division-format-fields {
+        flex: 0 0 17rem;
+        order: 1;
         grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 2.75rem;
     }
 
